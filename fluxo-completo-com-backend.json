@@ -1,0 +1,227 @@
+{
+  "name": "Atendimento WhatsApp - Fluxo Completo (com Backend)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Webhook - Evolution API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 400],
+      "id": "node-webhook",
+      "webhookId": "atendimento-whatsapp-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body ?? $input.item.json;\nconst event = body.event;\nconst data = body.data;\n\nif (event !== 'messages.upsert') {\n  return [];\n}\nif (!data || !data.key) {\n  return [];\n}\nif (data.key.fromMe) {\n  return [];\n}\n\nconst remoteJid = data.key.remoteJid || '';\nconst telefone = remoteJid.split('@')[0];\nconst nome = data.pushName || 'Cliente';\nconst texto =\n  data.message?.conversation ||\n  data.message?.extendedTextMessage?.text ||\n  '';\n\nreturn [\n  {\n    json: {\n      telefone,\n      nome,\n      texto: texto.trim(),\n      instance: body.instance,\n    },\n  },\n];\n"
+      },
+      "name": "Extrair Dados da Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 400],
+      "id": "node-extract"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ \"http://host.docker.internal:3000/conversations/by-phone/\" + $json.telefone }}",
+        "options": {}
+      },
+      "name": "Verificar Conversa Ativa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
+      "position": [620, 400],
+      "id": "node-check-conversation"
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\nconst conversa = $input.item.json;\n\nreturn [\n  {\n    json: {\n      conversation_id: conversa.id,\n      mensagem: original.texto,\n    },\n  },\n];\n"
+      },
+      "name": "Preparar Mensagem do Cliente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 220],
+      "id": "node-prepare-message"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://host.docker.internal:3000/conversations/\" + $json.conversation_id + \"/messages\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"origem\": \"cliente\", \"mensagem\": $json.mensagem } }}",
+        "options": {}
+      },
+      "name": "Registrar Mensagem do Cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1080, 220],
+      "id": "node-register-message"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-digito",
+              "leftValue": "={{ $('Extrair Dados da Mensagem').item.json.texto }}",
+              "rightValue": "^[1-5]$",
+              "operator": { "type": "string", "operation": "regex" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Escolheu Departamento? (1-5)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [860, 560],
+      "id": "node-if-escolha"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:3000/departments",
+        "options": {}
+      },
+      "name": "Buscar Departamentos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1080, 480],
+      "id": "node-fetch-departments"
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\n\n// O node HTTP Request separa cada elemento do array retornado pela API\n// em um item diferente — por isso reconstruímos o array com .all()\n// em vez de usar $input.item.json (que seria só 1 departamento).\nconst departamentos = $('Buscar Departamentos').all().map((item) => item.json);\n\nconst codigoPorOpcao = {\n  '1': 'RH',\n  '2': 'FIN',\n  '3': 'CONT',\n  '4': 'TI',\n  '5': 'COM',\n};\n\nconst codigo = codigoPorOpcao[original.texto];\nconst departamento = departamentos.find((d) => d.codigo === codigo);\n\nif (!departamento) {\n  throw new Error(`Departamento com código ${codigo} não encontrado. Rode o seed do backend (npm run seed).`);\n}\n\nreturn [\n  {\n    json: {\n      telefone: original.telefone,\n      nome: original.nome,\n      instance: original.instance,\n      texto: original.texto,\n      departamento_id: departamento.id,\n      departamento_nome: departamento.nome,\n    },\n  },\n];\n"
+      },
+      "name": "Mapear Departamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 480],
+      "id": "node-map-department"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"telefone\": $json.telefone, \"cliente_nome\": $json.nome, \"departamento_id\": $json.departamento_id, \"mensagem_inicial\": $json.texto } }}",
+        "options": {}
+      },
+      "name": "Criar Conversa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1520, 480],
+      "id": "node-create-conversation"
+    },
+    {
+      "parameters": {
+        "jsCode": "const mapeado = $('Mapear Departamento').item.json;\n\nreturn [\n  {\n    json: {\n      telefone: mapeado.telefone,\n      instance: mapeado.instance,\n      resposta: `Perfeito! Você foi direcionado para o setor de *${mapeado.departamento_nome}*. Em instantes um atendente vai continuar seu atendimento por aqui. 🙂`,\n    },\n  },\n];\n"
+      },
+      "name": "Montar Confirmação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1740, 480],
+      "id": "node-build-confirmation"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://evolution-api:8080/message/sendText/\" + $json.instance }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "COLOQUE_AQUI_A_EVOLUTION_API_KEY" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": $json.telefone, \"text\": $json.resposta } }}",
+        "options": {}
+      },
+      "name": "Enviar Confirmação de Setor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1960, 480],
+      "id": "node-send-confirmation"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://evolution-api:8080/message/sendText/\" + $('Extrair Dados da Mensagem').item.json.instance }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "COLOQUE_AQUI_A_EVOLUTION_API_KEY" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": $('Extrair Dados da Mensagem').item.json.telefone, \"text\": \"Olá! Seja bem-vindo(a) 👋\\n\\nEscolha o departamento que você deseja falar:\\n\\n1 - RH\\n2 - Financeiro\\n3 - Contabilidade\\n4 - TI\\n5 - Comercial\\n\\nDigite o número da opção desejada.\" } }}",
+        "options": {}
+      },
+      "name": "Enviar Menu",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1080, 660],
+      "id": "node-send-menu"
+    }
+  ],
+  "connections": {
+    "Webhook - Evolution API": {
+      "main": [[{ "node": "Extrair Dados da Mensagem", "type": "main", "index": 0 }]]
+    },
+    "Extrair Dados da Mensagem": {
+      "main": [[{ "node": "Verificar Conversa Ativa", "type": "main", "index": 0 }]]
+    },
+    "Verificar Conversa Ativa": {
+      "main": [
+        [{ "node": "Preparar Mensagem do Cliente", "type": "main", "index": 0 }],
+        [{ "node": "Escolheu Departamento? (1-5)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar Mensagem do Cliente": {
+      "main": [[{ "node": "Registrar Mensagem do Cliente", "type": "main", "index": 0 }]]
+    },
+    "Escolheu Departamento? (1-5)": {
+      "main": [
+        [{ "node": "Buscar Departamentos", "type": "main", "index": 0 }],
+        [{ "node": "Enviar Menu", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar Departamentos": {
+      "main": [[{ "node": "Mapear Departamento", "type": "main", "index": 0 }]]
+    },
+    "Mapear Departamento": {
+      "main": [[{ "node": "Criar Conversa", "type": "main", "index": 0 }]]
+    },
+    "Criar Conversa": {
+      "main": [[{ "node": "Montar Confirmação", "type": "main", "index": 0 }]]
+    },
+    "Montar Confirmação": {
+      "main": [[{ "node": "Enviar Confirmação de Setor", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}
