@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #f6f9fb;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eaf1f5;
+  --border: #d3e0e8;
+  --text-primary: #0b1f2a;
+  --text-secondary: #4a6878;
+  --text-muted: #7593a3;
+}
+
+.dark {
+  --surface: #07161f;
+  --surface-raised: #0b1f2a;
+  --surface-sunken: #050f16;
+  --border: #1b4356;
+  --text-primary: #e8eef2;
+  --text-secondary: #b4c6d0;
+  --text-muted: #7593a3;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-color: var(--surface);
+    color: var(--text-primary);
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  /* Foco visível e consistente — acessibilidade de teclado */
+  :focus-visible {
+    outline: 2px solid #2dd4bf;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: rgba(45, 212, 191, 0.3);
+  }
+}
+
+@layer utilities {
+  .text-primary {
+    color: var(--text-primary);
+  }
+  .text-secondary {
+    color: var(--text-secondary);
+  }
+  .text-muted {
+    color: var(--text-muted);
+  }
+  .bg-surface {
+    background-color: var(--surface);
+  }
+  .bg-raised {
+    background-color: var(--surface-raised);
+  }
+  .bg-sunken {
+    background-color: var(--surface-sunken);
+  }
+  .border-app {
+    border-color: var(--border);
+  }
+}
+
+/* Respeita preferência de movimento reduzido */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
