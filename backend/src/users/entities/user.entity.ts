@@ -41,6 +41,6 @@ export class User {
   @Column({ default: true })
   ativo: boolean;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   criado_em: Date;
 }

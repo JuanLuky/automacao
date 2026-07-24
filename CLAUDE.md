@@ -55,6 +55,10 @@ Padrões em uso, e por quê (não adicionar padrões novos sem necessidade real 
 - **Adapter** (`EvolutionService`) — se trocar de provedor de WhatsApp, só essa classe muda.
 - **Observer** (`EventsGateway`) — services emitem evento sem saber quem ouve.
 
+### Colunas de data/hora — sempre `timestamptz`, nunca `timestamp`
+
+Todas as colunas de data (`@CreateDateColumn`, `finalizado_em`, etc.) usam `type: 'timestamptz'` explicitamente. **Não voltar pro tipo padrão do TypeORM (`timestamp`, sem timezone)** — descoberto em 2026-07-24: com `timestamp`, o driver `pg` late o valor assumindo o timezone local do processo Node. Nesta máquina o backend roda nativo no Windows (fuso America/Sao_Paulo, UTC-3), então a API devolvia horários 3h adiantados (ex: mensagem das 8h35 aparecia como 11h35 no frontend). Com `timestamptz` o Postgres guarda o instante absoluto e o driver não depende do fuso do processo que está lendo.
+
 ### Rotas sem autenticação (proposital, não é bug)
 
 `GET /conversations/by-phone/:telefone`, `POST /conversations` e `POST /conversations/:id/messages` são públicas porque o **n8n** as chama diretamente (ele não tem login de atendente). Isso é um trade-off de MVP — vale reforçar com uma chave compartilhada n8n↔backend antes de produção real com clientes.
@@ -134,12 +138,26 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 - [x] Workflow do n8n integrado de ponta a ponta com o backend
 - [x] Frontend Next.js — login + painel protegido completos: fila por setor (com Assumir), chat (histórico + envio + Transferir + Finalizar), dashboard de contagens. Todos os três telas já ligadas ao Socket.IO.
 - [x] `tsc --noEmit` e `npm run build` do frontend passam limpos; todas as rotas do painel respondem 200 num `next start` sem backend rodando (sem crash de SSR)
-- [ ] **Fluxo ponta a ponta ainda não foi testado com backend + Postgres reais** — ver "Ambiente de desenvolvimento" abaixo. Falta validar manualmente: login → conversa chega em `nova_conversa` → Assumir → chat troca mensagens em tempo real → Transferir/Finalizar refletem na fila de outro atendente.
-- [ ] Infra local via Docker Compose está indisponível no momento (ver abaixo) — não foi possível confirmar se `docker-compose.yml` ainda sobe tudo sem ajustes.
+- [x] Infra local via Docker Compose validada em 2026-07-24 (Postgres/Redis/Evolution/n8n/pgAdmin saudáveis) e backend NestJS conectado a ela — login, `GET /departments`, criar conversa, assumir, finalizar e handshake do Socket.IO testados via curl. Ver "Ambiente de desenvolvimento" abaixo pros ajustes específicos desta máquina.
+- [x] Frontend testado manualmente pelo navegador contra o backend + Postgres reais (2026-07-24): login → fila → Assumir → chat → Transferir/Finalizar, com Socket.IO ao vivo. Validado pelo usuário.
+- [x] Fluxo real via WhatsApp testado (2026-07-24), webhook por instância configurado no Manager da Evolution API (Events → Webhook → `http://n8n:5678/webhook/whatsapp`). Validado pelo usuário.
 
 ## Ambiente de desenvolvimento
 
-O **Docker Desktop foi desinstalado desta máquina** (constatado em 2026-07-23: sem binário em `Program Files`, sem entrada no registro, `docker` fora do PATH). Sobraram apenas resíduos — a distro WSL `docker-desktop` (parada) e a pasta `~/.docker` — que não são suficientes pra rodar `docker compose up`. Antes de tentar subir a infra (Postgres, Redis, Evolution API, n8n) ou testar o fluxo completo do painel, confirmar se o Docker foi reinstalado; não assumir que `docker compose` funciona sem checar primeiro.
+Docker reinstalado em 2026-07-24 (Docker version 29.6.2, Compose v5.3.1, daemon ativo). O bloqueio anterior (Docker Desktop desinstalado) não existe mais — `docker compose up` pode ser tentado normalmente.
+
+`backend/.env` foi criado nesta data com `DATABASE_URL` apontando para `localhost:5433/atendimento_db` (porta 5433, não 5432 — ver motivo abaixo; o backend roda fora do Docker, então usa a porta publicada pelo compose, não o hostname `postgres`), `EVOLUTION_API_URL=http://localhost:8089` e `EVOLUTION_API_KEY` copiada do `.env` da raiz. `JWT_SECRET` foi gerado com `openssl rand -hex 32` — trocar antes de produção real.
+
+Corrigido também `WEBHOOK_GLOBAL_ENABLED` no `docker-compose.yml` (estava `"true"`, o que contradizia o aviso deste próprio arquivo sobre mensagens duplicadas quando o webhook global e o webhook por instância estão ativos ao mesmo tempo). Agora está `"false"` — o webhook precisa ser configurado por instância no Manager da Evolution API (Events → Webhook) antes do teste ponta a ponta.
+
+### `docker compose up` validado em 2026-07-24 — ajustes necessários nesta máquina
+
+- **Credencial do Docker CLI**: `~/.docker/config.json` tinha `"credsStore": "desktop"` apontando pro binário `docker-credential-desktop`, que não estava no PATH — bloqueava qualquer `docker compose up` (até pull de imagem pública). Removida a chave `credsStore` (não havia nada em `auths` mesmo, então nada foi perdido).
+- **Porta 5432 já ocupada**: esta máquina tem um **PostgreSQL nativo do Windows rodando como serviço** (`postgresql-x64-13`, Automatic, não relacionado a este projeto — não mexer nele). Ele disputa a porta 5432 do host com o proxy do Docker Desktop, e IPv4 (`127.0.0.1`) caía no Postgres nativo em vez do container, causando `password authentication failed`. Solução: o Postgres do `docker-compose.yml` agora publica em **`5433:5432`** no host (containers continuam se falando por `postgres:5432` na rede interna, sem mudança). `backend/.env` usa `localhost:5433`.
+- **Volume `postgres_data` com resíduo de tentativa anterior**: o volume já existia com `evolution_db` criado, então `init_db.sh` (que só roda em datadir vazio) não recriou `n8n_db` nem `atendimento_db` — n8n crashou até isso ser corrigido manualmente (`CREATE DATABASE n8n_db; CREATE DATABASE atendimento_db;`). Se algum dia for preciso resetar do zero, `docker volume rm automacao_postgres_data` força o `init_db.sh` a rodar de novo (destrutivo — não fazer sem confirmar com o usuário).
+- **Backend via `npm run start:dev` não funciona no Git Bash** desta máquina (erro `'"node"' não é reconhecido` — problema de resolução de PATH do shim do npm no MSYS). Funciona normalmente via PowerShell (`cmd /c "npm run start:dev"` ou diretamente).
+
+Depois desses ajustes: os 5 containers sobem saudáveis, `npm run seed` cria os 5 departamentos + admin, login/`GET departments`/`POST conversations`/`assume`/`finish`/Socket.IO handshake testados manualmente via curl e funcionando ponta a ponta no nível de API. **Ainda não testado**: o frontend consumindo isso ao vivo, e o fluxo real via WhatsApp/Evolution/n8n (falta configurar o webhook por instância no Manager da Evolution API).
 
 ## O que evitar sugerir
 

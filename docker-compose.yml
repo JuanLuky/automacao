@@ -26,7 +26,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      # 5433 no host — a porta 5432 já está ocupada por um PostgreSQL nativo
+      # do Windows (serviço "postgresql-x64-13") nesta máquina.
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init_db.sh:/docker-entrypoint-initdb.d/init_db.sh
@@ -104,10 +106,10 @@ services:
       CACHE_REDIS_SAVE_INSTANCES: "false"
       CACHE_LOCAL_ENABLED: "false"
 
-      # Webhook — para onde a Evolution API vai notificar mensagens recebidas
-      # Aponta direto para o n8n (o fluxo de orquestração)
-      WEBHOOK_GLOBAL_ENABLED: "true"
-      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
+      # Webhook — configurado por instância no Manager (Events → Webhook),
+      # apontando para http://n8n:5678/webhook/whatsapp. NÃO habilitar
+      # WEBHOOK_GLOBAL_* junto com isso — causa mensagens duplicadas.
+      WEBHOOK_GLOBAL_ENABLED: "false"
 
       # Logs
       LOG_LEVEL: "ERROR,WARN,INFO"

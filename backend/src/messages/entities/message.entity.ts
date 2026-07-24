@@ -32,6 +32,6 @@ export class Message {
   @Column({ type: 'text' })
   mensagem: string;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   criado_em: Date;
 }

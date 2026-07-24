@@ -43,9 +43,9 @@ export class Conversation {
   })
   status: ConversationStatus;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   criado_em: Date;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   finalizado_em: Date | null;
 }
