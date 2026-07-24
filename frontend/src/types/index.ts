@@ -34,13 +34,14 @@ export interface Message {
 export interface Conversation {
   id: string;
   telefone: string;
-  cliente_nome: string;
+  cliente_nome: string | null;
   status: ConversationStatus;
+  departamento_id: string;
   departamento?: Department;
+  atendente_id: string | null;
   atendente?: User;
   criado_em: string;
-  atualizado_em: string;
-  ultima_mensagem?: string;
+  finalizado_em: string | null;
 }
 
 export interface LoginPayload {
@@ -51,6 +52,17 @@ export interface LoginPayload {
 export interface LoginResponse {
   access_token: string;
   user: User;
+}
+
+export interface TransferPayload {
+  departamento_destino_id: string;
+  motivo?: string;
+}
+
+export interface SendMessagePayload {
+  origem: MessageOrigin;
+  mensagem: string;
+  instance?: string;
 }
 
 /** Erro normalizado para exibição na interface. */

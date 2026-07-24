@@ -1,5 +1,15 @@
 import axios, { AxiosError } from "axios";
-import type { ApiError, LoginPayload, LoginResponse } from "@/types";
+import type {
+  ApiError,
+  Conversation,
+  ConversationStatus,
+  Department,
+  LoginPayload,
+  LoginResponse,
+  Message,
+  SendMessagePayload,
+  TransferPayload,
+} from "@/types";
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
@@ -91,5 +101,65 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
 
 export async function getCurrentUser() {
   const { data } = await api.post("/auth/me");
+  return data;
+}
+
+export async function getDepartments(): Promise<Department[]> {
+  const { data } = await api.get<Department[]>("/departments");
+  return data;
+}
+
+export async function getConversations(filtros: {
+  status?: ConversationStatus;
+  departamento_id?: string;
+}): Promise<Conversation[]> {
+  const { data } = await api.get<Conversation[]>("/conversations", {
+    params: filtros,
+  });
+  return data;
+}
+
+/** Não existe GET /conversations/:id — busca na lista completa. */
+export async function getConversation(id: string): Promise<Conversation | null> {
+  const conversas = await getConversations({});
+  return conversas.find((c) => c.id === id) ?? null;
+}
+
+export async function assumeConversation(id: string): Promise<Conversation> {
+  const { data } = await api.patch<Conversation>(`/conversations/${id}/assume`);
+  return data;
+}
+
+export async function transferConversation(
+  id: string,
+  payload: TransferPayload,
+): Promise<Conversation> {
+  const { data } = await api.patch<Conversation>(
+    `/conversations/${id}/transfer`,
+    payload,
+  );
+  return data;
+}
+
+export async function finishConversation(id: string): Promise<Conversation> {
+  const { data } = await api.patch<Conversation>(`/conversations/${id}/finish`);
+  return data;
+}
+
+export async function getMessages(conversationId: string): Promise<Message[]> {
+  const { data } = await api.get<Message[]>(
+    `/conversations/${conversationId}/messages`,
+  );
+  return data;
+}
+
+export async function sendMessage(
+  conversationId: string,
+  payload: SendMessagePayload,
+): Promise<Message> {
+  const { data } = await api.post<Message>(
+    `/conversations/${conversationId}/messages`,
+    payload,
+  );
   return data;
 }
