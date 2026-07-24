@@ -29,6 +29,7 @@ export interface Message {
   mensagem: string;
   criado_em: string;
   conversation_id: string;
+  atendente?: User | null;
 }
 
 export interface Conversation {
@@ -42,6 +43,14 @@ export interface Conversation {
   atendente?: User;
   criado_em: string;
   finalizado_em: string | null;
+}
+
+export interface CreateUserPayload {
+  nome: string;
+  email: string;
+  senha: string;
+  departamento_id?: string;
+  role?: UserRole;
 }
 
 export interface LoginPayload {

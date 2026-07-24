@@ -22,6 +22,7 @@ export class MessagesService {
     return this.messagesRepository.find({
       where: { conversation_id: conversationId },
       order: { criado_em: 'ASC' },
+      relations: ['atendente', 'atendente.departamento'],
     });
   }
 
@@ -31,6 +32,7 @@ export class MessagesService {
   ): Promise<Message> {
     const conversa = await this.conversationsRepository.findOne({
       where: { id: conversationId },
+      relations: ['atendente', 'atendente.departamento'],
     });
 
     if (!conversa) {
@@ -42,8 +44,19 @@ export class MessagesService {
         conversation_id: conversationId,
         origem: dto.origem,
         mensagem: dto.mensagem,
+        // O responsável é sempre quem está com a conversa assumida agora —
+        // não existe seleção de atendente no payload (rota também é
+        // chamada pelo n8n, sem noção de usuário logado).
+        atendente_id:
+          dto.origem === MessageOrigin.ATENDENTE ? conversa.atendente_id : null,
       }),
     );
+
+    // save() não retorna a relação carregada — anexa em memória pra ir
+    // completa no evento de socket e na resposta HTTP.
+    if (dto.origem === MessageOrigin.ATENDENTE) {
+      mensagem.atendente = conversa.atendente;
+    }
 
     // Só dispara envio real ao WhatsApp quando é o atendente respondendo.
     // Mensagens de origem "cliente" já chegaram pelo WhatsApp (via n8n) —
@@ -54,10 +67,20 @@ export class MessagesService {
           'Campo "instance" é obrigatório para mensagens do atendente.',
         );
       }
+      // Assinatura "Nome - SETOR" só no texto enviado ao WhatsApp — o
+      // registro em banco (dto.mensagem) fica limpo, já que o frontend
+      // mostra o atendente separadamente via mensagem.atendente.
+      const assinatura = conversa.atendente
+        ? `*${conversa.atendente.nome}${conversa.atendente.departamento ? ` - ${conversa.atendente.departamento.codigo}` : ''}*`
+        : null;
+      const textoWhatsapp = assinatura
+        ? `${assinatura}\n${dto.mensagem}`
+        : dto.mensagem;
+
       await this.evolutionService.enviarMensagem(
         dto.instance,
         conversa.telefone,
-        dto.mensagem,
+        textoWhatsapp,
       );
     }
 

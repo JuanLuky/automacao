@@ -10,6 +10,7 @@ import {
   LogOut,
   Moon,
   Sun,
+  UserPlus,
   Waves,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,6 +20,10 @@ import { DepartmentsProvider } from "@/hooks/useDepartments";
 const NAV = [
   { href: "/fila", label: "Fila", icon: ListChecks },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+];
+
+const NAV_ADMIN = [
+  { href: "/usuarios", label: "Usuários", icon: UserPlus },
 ];
 
 export default function PainelLayout({
@@ -60,7 +65,7 @@ export default function PainelLayout({
               </div>
 
               <nav className="flex items-center gap-1">
-                {NAV.map(({ href, label, icon: Icon }) => {
+                {[...NAV, ...(user?.role === "admin" ? NAV_ADMIN : [])].map(({ href, label, icon: Icon }) => {
                   const active = pathname?.startsWith(href);
                   return (
                     <Link

@@ -3,12 +3,14 @@ import type {
   ApiError,
   Conversation,
   ConversationStatus,
+  CreateUserPayload,
   Department,
   LoginPayload,
   LoginResponse,
   Message,
   SendMessagePayload,
   TransferPayload,
+  User,
 } from "@/types";
 
 export const API_URL =
@@ -161,5 +163,15 @@ export async function sendMessage(
     `/conversations/${conversationId}/messages`,
     payload,
   );
+  return data;
+}
+
+export async function getUsers(): Promise<User[]> {
+  const { data } = await api.get<User[]>("/users");
+  return data;
+}
+
+export async function createUser(payload: CreateUserPayload): Promise<User> {
+  const { data } = await api.post<User>("/users", payload);
   return data;
 }

@@ -297,8 +297,14 @@ export default function ConversaPage() {
           ) : (
             <div
               key={m.id}
-              className={`flex ${m.origem === "atendente" ? "justify-end" : "justify-start"}`}
+              className={`flex flex-col ${m.origem === "atendente" ? "items-end" : "items-start"}`}
             >
+              {m.origem === "atendente" && m.atendente && (
+                <span className="mb-1 px-1 text-[0.75rem] font-semibold text-tide-400">
+                  {m.atendente.nome}
+                  {m.atendente.departamento && ` - ${m.atendente.departamento.codigo}`}
+                </span>
+              )}
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[0.875rem] leading-relaxed ${
                   m.origem === "atendente"

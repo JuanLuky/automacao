@@ -59,6 +59,16 @@ Padrões em uso, e por quê (não adicionar padrões novos sem necessidade real 
 
 Todas as colunas de data (`@CreateDateColumn`, `finalizado_em`, etc.) usam `type: 'timestamptz'` explicitamente. **Não voltar pro tipo padrão do TypeORM (`timestamp`, sem timezone)** — descoberto em 2026-07-24: com `timestamp`, o driver `pg` late o valor assumindo o timezone local do processo Node. Nesta máquina o backend roda nativo no Windows (fuso America/Sao_Paulo, UTC-3), então a API devolvia horários 3h adiantados (ex: mensagem das 8h35 aparecia como 11h35 no frontend). Com `timestamptz` o Postgres guarda o instante absoluto e o driver não depende do fuso do processo que está lendo.
 
+### Mensagens — assinatura do atendente (2026-07-24)
+
+`Message` tem `atendente_id` (nullable, preenchido só quando `origem = atendente`, sempre igual ao `atendente_id` da conversa no momento do envio — não existe seleção de atendente no payload, já que a rota também é chamada pelo n8n sem noção de usuário logado). `MessagesService.findByConversation`/`create` carregam a relação `atendente.departamento` pra isso.
+
+Além de aparecer no painel (ver frontend), o texto enviado à Evolution API leva um prefixo `*Nome - CÓDIGO*\n` (negrito do WhatsApp) montado em `MessagesService.create` — só no texto que vai pro WhatsApp, o `mensagem` salvo em banco fica limpo. Objetivo: cliente saber com qual atendente do setor está falando. Testado via WhatsApp real em 2026-07-24, validado pelo usuário.
+
+### `GET /users` e `POST /users` nunca retornam `senha_hash`
+
+`UsersService.create`/`findAll` desestruturam o campo antes de devolver (`Omit<User, 'senha_hash'>`). Isso não existia originalmente — os dois métodos devolviam a entidade crua do TypeORM, vazando o hash bcrypt no JSON. Corrigido em 2026-07-24 ao construir a tela de gestão de usuários. **Manter esse padrão em qualquer novo método do `UsersService` que devolva `User`.**
+
 ### Rotas sem autenticação (proposital, não é bug)
 
 `GET /conversations/by-phone/:telefone`, `POST /conversations` e `POST /conversations/:id/messages` são públicas porque o **n8n** as chama diretamente (ele não tem login de atendente). Isso é um trade-off de MVP — vale reforçar com uma chave compartilhada n8n↔backend antes de produção real com clientes.
@@ -98,7 +108,8 @@ frontend/src/
 │       ├── layout.tsx          # topbar (nav, tema, sair) + DepartmentsProvider
 │       ├── fila/                # lista por setor, abas aguardando/em_atendimento, botão Assumir
 │       ├── conversas/[id]/       # chat: histórico, envio, Transferir, Finalizar
-│       └── dashboard/           # contadores por status (+ breakdown por setor pro admin)
+│       ├── dashboard/           # contadores por status (+ breakdown por setor pro admin)
+│       └── usuarios/            # só admin — listar + criar atendentes/admins (ver seção própria abaixo)
 ├── components/
 │   ├── LiveQueuePanel.tsx     # amostra ilustrativa na tela de login (dados locais, não é a fila real)
 │   └── ui/                    # Button, Field, Select, StatusBadge
@@ -116,6 +127,14 @@ Não existe `GET /conversations/:id` no backend — só `GET /conversations` (li
 - Autenticação: token JWT salvo em `localStorage` (chave `atendimento.token`, ver `lib/api.ts`), aplicado via interceptor do axios. `localStorage` é apropriado aqui — é um app real fora do sandbox de artifacts.
 - Tema claro/escuro via classe `.dark` no `<html>`, tokens de cor em `globals.css` (`--surface`, `--surface-raised`, `--text-primary` etc.), preferência salva em `localStorage`.
 - Tempo real: um único socket (`lib/socket.ts`) compartilhado pela sessão. `useSocketEvent(evento, handler)` assina/desassina no ciclo de vida do componente sem exigir handler memoizado. Nas telas de fila/dashboard, qualquer um dos três eventos (`nova_conversa`, `conversa_atualizada`, `conversa_finalizada`) simplesmente **recarrega a lista** respeitando os filtros atuais — não há merge otimista de estado local. Foi a escolha deliberada pra manter a primeira integração ponta a ponta do WebSocket simples e correta, mesmo custando uma requisição extra por evento.
+
+### Gestão de usuários — `/usuarios` (só admin, 2026-07-24)
+
+Item de nav "Usuários" (`NAV_ADMIN` em `layout.tsx`) só aparece quando `user.role === 'admin'`; a própria página redireciona (`router.replace('/fila')`) se um não-admin acessar a URL direto. Isso é reforço **só no frontend** — igual ao filtro de setor em `fila`/`dashboard`, o backend (`UsersController`) não tem guard de `role: admin`, só `JwtAuthGuard`. Mesmo trade-off de MVP já documentado, não é descuido.
+
+Tela lista usuários (`GET /users`) e tem formulário inline (padrão do "Transferir" em `conversas/[id]`) pra criar (`POST /users`): nome, e-mail, senha, setor (opcional), papel. `lib/api.ts` expõe `getUsers`/`createUser`, tipo `CreateUserPayload` em `types/index.ts`.
+
+**Só criar, ainda não tem editar/inativar/excluir** — ver "Próximos passos".
 
 ### Identidade visual (não trocar sem motivo — já foi definida com o usuário)
 
@@ -141,6 +160,8 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 - [x] Infra local via Docker Compose validada em 2026-07-24 (Postgres/Redis/Evolution/n8n/pgAdmin saudáveis) e backend NestJS conectado a ela — login, `GET /departments`, criar conversa, assumir, finalizar e handshake do Socket.IO testados via curl. Ver "Ambiente de desenvolvimento" abaixo pros ajustes específicos desta máquina.
 - [x] Frontend testado manualmente pelo navegador contra o backend + Postgres reais (2026-07-24): login → fila → Assumir → chat → Transferir/Finalizar, com Socket.IO ao vivo. Validado pelo usuário.
 - [x] Fluxo real via WhatsApp testado (2026-07-24), webhook por instância configurado no Manager da Evolution API (Events → Webhook → `http://n8n:5678/webhook/whatsapp`). Validado pelo usuário.
+- [x] Mensagens do atendente levam assinatura "Nome - CÓDIGO" no WhatsApp do cliente (2026-07-24), testado via WhatsApp real e validado pelo usuário. Ver "Mensagens — assinatura do atendente" acima.
+- [x] Tela `/usuarios` (só admin): listar + criar usuários, com correção de `senha_hash` vazando na resposta da API. Ver "Gestão de usuários" acima. **Ainda falta editar/inativar/excluir — próxima tarefa pedida pelo usuário.**
 
 ## Ambiente de desenvolvimento
 
@@ -158,6 +179,13 @@ Corrigido também `WEBHOOK_GLOBAL_ENABLED` no `docker-compose.yml` (estava `"tru
 - **Backend via `npm run start:dev` não funciona no Git Bash** desta máquina (erro `'"node"' não é reconhecido` — problema de resolução de PATH do shim do npm no MSYS). Funciona normalmente via PowerShell (`cmd /c "npm run start:dev"` ou diretamente).
 
 Depois desses ajustes: os 5 containers sobem saudáveis, `npm run seed` cria os 5 departamentos + admin, login/`GET departments`/`POST conversations`/`assume`/`finish`/Socket.IO handshake testados manualmente via curl e funcionando ponta a ponta no nível de API. **Ainda não testado**: o frontend consumindo isso ao vivo, e o fluxo real via WhatsApp/Evolution/n8n (falta configurar o webhook por instância no Manager da Evolution API).
+
+## Próximos passos (pedido pelo usuário em 2026-07-24, ainda não iniciado)
+
+Depois da tela `/usuarios` (listar + criar), adicionar: **editar usuário**, **Filtro de busca**, **inativar usuário**. Nada disso existe ainda no backend — `UsersController` só tem `GET` e `POST`. Pontos a considerar ao implementar (não decisões já tomadas, só contexto pra próxima sessão):
+
+- `User.ativo` (boolean, default `true`) **já existe na entity** (`users/entities/user.entity.ts`) mas não é lido em lugar nenhum hoje — nem no login (`AuthService.login` já checa `!user.ativo` e barra login, isso já funciona), nem exposto pela API, nem editável. "Inativar" provavelmente é só um `PATCH` que vira esse campo `false`, reaproveitando a checagem que já existe no login.
+- "Excluir" de verdade (`DELETE`) esbarra em `Message.atendente_id` e `Conversation.atendente_id`, que são FK pra `users` — apagar um usuário com histórico de mensagens/conversas vai quebrar ou exigir `ON DELETE SET NULL`/restrição. Vale considerar se "excluir" devia ser só "inativar" disfarçado, para que não quebre o sistema, porém ao excluir quero que ao excluir somente inative porém não apareça na lista do GET ALL USERS.
 
 ## O que evitar sugerir
 

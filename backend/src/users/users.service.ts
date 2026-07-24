@@ -14,7 +14,7 @@ export class UsersService {
     private readonly usersRepository: Repository<User>,
   ) {}
 
-  async create(dto: CreateUserDto): Promise<User> {
+  async create(dto: CreateUserDto): Promise<Omit<User, 'senha_hash'>> {
     const existente = await this.findByEmail(dto.email);
     if (existente) {
       throw new ConflictException('Já existe um usuário com esse email.');
@@ -30,14 +30,17 @@ export class UsersService {
       role: dto.role,
     });
 
-    return this.usersRepository.save(user);
+    const salvo = await this.usersRepository.save(user);
+    const { senha_hash: _senha_hash, ...semSenha } = salvo;
+    return semSenha;
   }
 
   findByEmail(email: string): Promise<User | null> {
     return this.usersRepository.findOne({ where: { email } });
   }
 
-  findAll(): Promise<User[]> {
-    return this.usersRepository.find({ relations: ['departamento'] });
+  async findAll(): Promise<Omit<User, 'senha_hash'>[]> {
+    const users = await this.usersRepository.find({ relations: ['departamento'] });
+    return users.map(({ senha_hash: _senha_hash, ...semSenha }) => semSenha);
   }
 }
