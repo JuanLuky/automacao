@@ -19,6 +19,7 @@ export interface User {
   nome: string;
   email: string;
   role: UserRole;
+  ativo: boolean;
   departamento?: Department;
   departamento_id?: string;
 }
@@ -50,6 +51,14 @@ export interface CreateUserPayload {
   email: string;
   senha: string;
   departamento_id?: string;
+  role?: UserRole;
+}
+
+export interface UpdateUserPayload {
+  nome?: string;
+  email?: string;
+  senha?: string;
+  departamento_id?: string | null;
   role?: UserRole;
 }
 

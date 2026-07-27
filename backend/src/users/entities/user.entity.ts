@@ -41,6 +41,12 @@ export class User {
   @Column({ default: true })
   ativo: boolean;
 
+  // Soft-delete: preenchido só quando o usuário é "excluído" (ex: desligado).
+  // Diferente de ativo=false sozinho (ex: férias), que é reversível e continua
+  // aparecendo no GET /users. excluido_em preenchido = some da lista.
+  @Column({ type: 'timestamptz', nullable: true })
+  excluido_em: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   criado_em: Date;
 }

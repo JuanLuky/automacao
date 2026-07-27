@@ -13,6 +13,7 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useDepartments } from "@/hooks/useDepartments";
@@ -41,6 +42,7 @@ export default function ConversaPage() {
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
+  const [confirmandoFinalizar, setConfirmandoFinalizar] = useState(false);
 
   const [transferindo, setTransferindo] = useState(false);
   const [transferDeptId, setTransferDeptId] = useState("");
@@ -114,7 +116,6 @@ export default function ConversaPage() {
   }
 
   async function handleFinalizar() {
-    if (!window.confirm("Finalizar esta conversa?")) return;
     setFinalizando(true);
     setErro(null);
     try {
@@ -123,6 +124,7 @@ export default function ConversaPage() {
     } catch (error) {
       setErro(normalizeError(error).message);
       setFinalizando(false);
+      setConfirmandoFinalizar(false);
     }
   }
 
@@ -219,7 +221,7 @@ export default function ConversaPage() {
               variant="ghost"
               className="!px-3.5 !py-2 text-[0.8125rem]"
               loading={finalizando}
-              onClick={handleFinalizar}
+              onClick={() => setConfirmandoFinalizar(true)}
             >
               <CheckCircle2 size={15} />
               Finalizar
@@ -349,6 +351,16 @@ export default function ConversaPage() {
           <Send size={17} />
         </Button>
       </form>
+
+      <ConfirmModal
+        open={confirmandoFinalizar}
+        title="Finalizar esta conversa?"
+        description="O atendimento será encerrado e não poderá mais receber mensagens."
+        confirmLabel="Finalizar"
+        loading={finalizando}
+        onConfirm={handleFinalizar}
+        onCancel={() => setConfirmandoFinalizar(false)}
+      />
     </div>
   );
 }

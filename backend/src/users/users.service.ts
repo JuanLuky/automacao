@@ -1,9 +1,10 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 const SALT_ROUNDS = 10;
 
@@ -40,7 +41,56 @@ export class UsersService {
   }
 
   async findAll(): Promise<Omit<User, 'senha_hash'>[]> {
-    const users = await this.usersRepository.find({ relations: ['departamento'] });
+    const users = await this.usersRepository.find({
+      where: { excluido_em: IsNull() },
+      relations: ['departamento'],
+    });
     return users.map(({ senha_hash: _senha_hash, ...semSenha }) => semSenha);
+  }
+
+  private async findOneAtivo(id: string): Promise<User> {
+    const user = await this.usersRepository.findOne({
+      where: { id, excluido_em: IsNull() },
+    });
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado.');
+    }
+    return user;
+  }
+
+  async update(id: string, dto: UpdateUserDto): Promise<Omit<User, 'senha_hash'>> {
+    const user = await this.findOneAtivo(id);
+
+    if (dto.email && dto.email !== user.email) {
+      const existente = await this.findByEmail(dto.email);
+      if (existente) {
+        throw new ConflictException('Já existe um usuário com esse email.');
+      }
+      user.email = dto.email;
+    }
+
+    if (dto.nome !== undefined) user.nome = dto.nome;
+    if (dto.departamento_id !== undefined) user.departamento_id = dto.departamento_id;
+    if (dto.role !== undefined) user.role = dto.role;
+    if (dto.senha) user.senha_hash = await bcrypt.hash(dto.senha, SALT_ROUNDS);
+
+    const salvo = await this.usersRepository.save(user);
+    const { senha_hash: _senha_hash, ...semSenha } = salvo;
+    return semSenha;
+  }
+
+  async setAtivo(id: string, ativo: boolean): Promise<Omit<User, 'senha_hash'>> {
+    const user = await this.findOneAtivo(id);
+    user.ativo = ativo;
+    const salvo = await this.usersRepository.save(user);
+    const { senha_hash: _senha_hash, ...semSenha } = salvo;
+    return semSenha;
+  }
+
+  async remove(id: string): Promise<void> {
+    const user = await this.findOneAtivo(id);
+    user.ativo = false;
+    user.excluido_em = new Date();
+    await this.usersRepository.save(user);
   }
 }
