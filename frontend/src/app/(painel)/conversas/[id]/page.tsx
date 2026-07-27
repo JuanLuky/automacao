@@ -328,7 +328,16 @@ export default function ConversaPage() {
             >
               {m.origem === "atendente" && m.atendente && (
                 <span className="mb-1 px-1 text-[0.75rem] font-semibold text-tide-400">
-                  {m.atendente.nome .trim() .split(" ") .slice(0, 2) .join(" ")}
+                  {
+                    m.atendente.nome
+                      .trim()
+                      .toLowerCase()
+                      .split(/\s+/)
+                      .filter(nome => !["da", "de", "do", "dos", "das"].includes(nome))
+                      .slice(0, 2)
+                      .map(nome => nome.charAt(0).toUpperCase() + nome.slice(1))
+                      .join(" ")
+                  }
                   {m.atendente.departamento &&
                     ` - ${m.atendente.departamento.nome.toUpperCase()}`}
                 </span>
