@@ -1,11 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Message, MessageOrigin } from './entities/message.entity';
-import { Conversation } from '../conversations/entities/conversation.entity';
-import { CreateMessageDto } from './dto/create-message.dto';
-import { EventsGateway } from '../websocket/events.gateway';
-import { EvolutionService } from '../integrations/evolution/evolution.service';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Message, MessageOrigin } from "./entities/message.entity";
+import { Conversation } from "../conversations/entities/conversation.entity";
+import { CreateMessageDto } from "./dto/create-message.dto";
+import { EventsGateway } from "../websocket/events.gateway";
+import { EvolutionService } from "../integrations/evolution/evolution.service";
 
 @Injectable()
 export class MessagesService {
@@ -21,8 +25,8 @@ export class MessagesService {
   findByConversation(conversationId: string): Promise<Message[]> {
     return this.messagesRepository.find({
       where: { conversation_id: conversationId },
-      order: { criado_em: 'ASC' },
-      relations: ['atendente', 'atendente.departamento'],
+      order: { criado_em: "ASC" },
+      relations: ["atendente", "atendente.departamento"],
     });
   }
 
@@ -32,11 +36,11 @@ export class MessagesService {
   ): Promise<Message> {
     const conversa = await this.conversationsRepository.findOne({
       where: { id: conversationId },
-      relations: ['atendente', 'atendente.departamento'],
+      relations: ["atendente", "atendente.departamento"],
     });
 
     if (!conversa) {
-      throw new NotFoundException('Conversa não encontrada.');
+      throw new NotFoundException("Conversa não encontrada.");
     }
 
     const mensagem = await this.messagesRepository.save(
@@ -70,9 +74,27 @@ export class MessagesService {
       // Assinatura "Nome - SETOR" só no texto enviado ao WhatsApp — o
       // registro em banco (dto.mensagem) fica limpo, já que o frontend
       // mostra o atendente separadamente via mensagem.atendente.
+      const formatarNome = (nome: string): string => {
+        const conectivos = ["da", "de", "do", "dos", "das"];
+
+        return nome
+          .trim()
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((parte) => !conectivos.includes(parte))
+          .slice(0, 2)
+          .map((parte) => parte.charAt(0).toUpperCase() + parte.slice(1))
+          .join(" ");
+      };
+
       const assinatura = conversa.atendente
-        ? `*${conversa.atendente.nome}${conversa.atendente.departamento ? ` - ${conversa.atendente.departamento.nome}:` : ''}*`
+        ? `*${formatarNome(conversa.atendente.nome)}${
+            conversa.atendente.departamento
+              ? ` - ${conversa.atendente.departamento.nome}:`
+              : ":"
+          }*`
         : null;
+
       const textoWhatsapp = assinatura
         ? `${assinatura}\n\n${dto.mensagem}`
         : dto.mensagem;
