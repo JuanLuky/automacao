@@ -67,6 +67,147 @@
       "position": [1080, 220],
       "id": "node-register-message"
     },
+
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "bufferAtual",
+        "key": "=buffer:{{ $('Extrair Dados da Mensagem').item.json.telefone }}",
+        "options": {}
+      },
+      "name": "Redis - Buscar Buffer Atual",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [860, 560],
+      "id": "node-debounce-get-buffer"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sem debounce nativo no n8n: acumulamos as mensagens fragmentadas de um\n// mesmo telefone num buffer no Redis, e só respondemos depois que ninguém\n// mandou nada novo por alguns segundos (ver node \"Wait - Aguardar Fragmentos\").\nconst original = $('Extrair Dados da Mensagem').item.json;\nconst bufferAtual = $json.bufferAtual || '';\nconst novoTexto = original.texto || '';\nconst novoBuffer = bufferAtual ? `${bufferAtual}\\n${novoTexto}` : novoTexto;\n\nreturn [\n  {\n    json: {\n      telefone: original.telefone,\n      novoBuffer,\n    },\n  },\n];\n"
+      },
+      "name": "Code - Acrescentar ao Buffer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 560],
+      "id": "node-debounce-append"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=buffer:{{ $('Extrair Dados da Mensagem').item.json.telefone }}",
+        "value": "={{ $json.novoBuffer }}",
+        "expire": true,
+        "ttl": 30,
+        "options": {}
+      },
+      "name": "Redis - Salvar Buffer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1300, 560],
+      "id": "node-debounce-set-buffer"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=latest:{{ $('Extrair Dados da Mensagem').item.json.telefone }}",
+        "value": "={{ $execution.id }}",
+        "expire": true,
+        "ttl": 30,
+        "options": {}
+      },
+      "name": "Redis - Marcar Última Mensagem",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1520, 560],
+      "id": "node-debounce-set-latest"
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 6,
+        "unit": "seconds"
+      },
+      "name": "Wait - Aguardar Fragmentos",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1740, 560],
+      "id": "node-debounce-wait",
+      "webhookId": "atendimento-whatsapp-wait-debounce"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "latestExecId",
+        "key": "=latest:{{ $('Extrair Dados da Mensagem').item.json.telefone }}",
+        "options": {}
+      },
+      "name": "Redis - Conferir Última Mensagem",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1960, 560],
+      "id": "node-debounce-get-latest"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-latest-match",
+              "leftValue": "={{ $json.latestExecId }}",
+              "rightValue": "={{ $execution.id }}",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "IF - É a Última do Burst?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2180, 560],
+      "id": "node-debounce-if-last"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "textoCombinado",
+        "key": "=buffer:{{ $('Extrair Dados da Mensagem').item.json.telefone }}",
+        "options": {}
+      },
+      "name": "Redis - Buscar Buffer Final",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [2400, 480],
+      "id": "node-debounce-get-final-buffer"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Última execução da rajada: junta o texto combinado no mesmo formato\n// de saída do node \"Extrair Dados da Mensagem\", pra tudo que vem depois\n// (checagem de departamento, menu, etc.) funcionar sem saber que existiu\n// um debounce no meio do caminho.\nconst original = $('Extrair Dados da Mensagem').item.json;\nconst textoCombinado = ($json.textoCombinado || original.texto || '').trim();\n\nreturn [\n  {\n    json: {\n      telefone: original.telefone,\n      nome: original.nome,\n      instance: original.instance,\n      texto: textoCombinado,\n    },\n  },\n];\n"
+      },
+      "name": "Combinar Fragmentos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2620, 480],
+      "id": "node-debounce-combine"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=buffer:{{ $('Extrair Dados da Mensagem').item.json.telefone }}"
+      },
+      "name": "Redis - Limpar Buffer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [2840, 480],
+      "id": "node-debounce-clear-buffer"
+    },
+
     {
       "parameters": {
         "conditions": {
@@ -78,7 +219,7 @@
           "conditions": [
             {
               "id": "cond-digito",
-              "leftValue": "={{ $('Extrair Dados da Mensagem').item.json.texto }}",
+              "leftValue": "={{ $('Combinar Fragmentos').item.json.texto }}",
               "rightValue": "^[1-5]$",
               "operator": { "type": "string", "operation": "regex" }
             }
@@ -90,7 +231,7 @@
       "name": "Escolheu Departamento? (1-5)",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [860, 560],
+      "position": [3060, 560],
       "id": "node-if-escolha"
     },
     {
@@ -102,17 +243,17 @@
       "name": "Buscar Departamentos",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1080, 480],
+      "position": [3280, 480],
       "id": "node-fetch-departments"
     },
     {
       "parameters": {
-        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\n\n// O node HTTP Request separa cada elemento do array retornado pela API\n// em um item diferente — por isso reconstruímos o array com .all()\n// em vez de usar $input.item.json (que seria só 1 departamento).\nconst departamentos = $('Buscar Departamentos').all().map((item) => item.json);\n\nconst codigoPorOpcao = {\n  '1': 'RH',\n  '2': 'FIN',\n  '3': 'CONT',\n  '4': 'TI',\n  '5': 'COM',\n};\n\nconst codigo = codigoPorOpcao[original.texto];\nconst departamento = departamentos.find((d) => d.codigo === codigo);\n\nif (!departamento) {\n  throw new Error(`Departamento com código ${codigo} não encontrado. Rode o seed do backend (npm run seed).`);\n}\n\nreturn [\n  {\n    json: {\n      telefone: original.telefone,\n      nome: original.nome,\n      instance: original.instance,\n      texto: original.texto,\n      departamento_id: departamento.id,\n      departamento_nome: departamento.nome,\n    },\n  },\n];\n"
+        "jsCode": "const original = $('Combinar Fragmentos').item.json;\n\n// O node HTTP Request separa cada elemento do array retornado pela API\n// em um item diferente — por isso reconstruímos o array com .all()\n// em vez de usar $input.item.json (que seria só 1 departamento).\nconst departamentos = $('Buscar Departamentos').all().map((item) => item.json);\n\nconst codigoPorOpcao = {\n  '1': 'RH',\n  '2': 'FIN',\n  '3': 'CONT',\n  '4': 'TI',\n  '5': 'COM',\n};\n\nconst codigo = codigoPorOpcao[original.texto];\nconst departamento = departamentos.find((d) => d.codigo === codigo);\n\nif (!departamento) {\n  throw new Error(`Departamento com código ${codigo} não encontrado. Rode o seed do backend (npm run seed).`);\n}\n\nreturn [\n  {\n    json: {\n      telefone: original.telefone,\n      nome: original.nome,\n      instance: original.instance,\n      texto: original.texto,\n      departamento_id: departamento.id,\n      departamento_nome: departamento.nome,\n    },\n  },\n];\n"
       },
       "name": "Mapear Departamento",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1300, 480],
+      "position": [3500, 480],
       "id": "node-map-department"
     },
     {
@@ -131,7 +272,7 @@
       "name": "Criar Conversa",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1520, 480],
+      "position": [3720, 480],
       "id": "node-create-conversation"
     },
     {
@@ -141,7 +282,7 @@
       "name": "Montar Confirmação",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1740, 480],
+      "position": [3940, 480],
       "id": "node-build-confirmation"
     },
     {
@@ -162,13 +303,13 @@
       "name": "Enviar Confirmação de Setor",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1960, 480],
+      "position": [4160, 480],
       "id": "node-send-confirmation"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ \"http://evolution-api:8080/message/sendText/\" + $('Extrair Dados da Mensagem').item.json.instance }}",
+        "url": "={{ \"http://evolution-api:8080/message/sendText/\" + $('Combinar Fragmentos').item.json.instance }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -177,13 +318,13 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"number\": $('Extrair Dados da Mensagem').item.json.telefone, \"text\": \"Olá! Seja bem-vindo(a) 👋\\n\\nEscolha o departamento que você deseja falar:\\n\\n1 - RH\\n2 - Financeiro\\n3 - Contabilidade\\n4 - TI\\n5 - Comercial\\n\\nDigite o número da opção desejada.\" } }}",
+        "jsonBody": "={{ { \"number\": $('Combinar Fragmentos').item.json.telefone, \"text\": \"Olá! Seja bem-vindo(a) 👋\\n\\nEscolha o departamento que você deseja falar:\\n\\n1 - RH\\n2 - Financeiro\\n3 - Contabilidade\\n4 - TI\\n5 - Comercial\\n\\nDigite o número da opção desejada.\" } }}",
         "options": {}
       },
       "name": "Enviar Menu",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1080, 660],
+      "position": [3280, 660],
       "id": "node-send-menu"
     }
   ],
@@ -197,12 +338,47 @@
     "Verificar Conversa Ativa": {
       "main": [
         [{ "node": "Preparar Mensagem do Cliente", "type": "main", "index": 0 }],
-        [{ "node": "Escolheu Departamento? (1-5)", "type": "main", "index": 0 }]
+        [{ "node": "Redis - Buscar Buffer Atual", "type": "main", "index": 0 }]
       ]
     },
     "Preparar Mensagem do Cliente": {
       "main": [[{ "node": "Registrar Mensagem do Cliente", "type": "main", "index": 0 }]]
     },
+
+    "Redis - Buscar Buffer Atual": {
+      "main": [[{ "node": "Code - Acrescentar ao Buffer", "type": "main", "index": 0 }]]
+    },
+    "Code - Acrescentar ao Buffer": {
+      "main": [[{ "node": "Redis - Salvar Buffer", "type": "main", "index": 0 }]]
+    },
+    "Redis - Salvar Buffer": {
+      "main": [[{ "node": "Redis - Marcar Última Mensagem", "type": "main", "index": 0 }]]
+    },
+    "Redis - Marcar Última Mensagem": {
+      "main": [[{ "node": "Wait - Aguardar Fragmentos", "type": "main", "index": 0 }]]
+    },
+    "Wait - Aguardar Fragmentos": {
+      "main": [[{ "node": "Redis - Conferir Última Mensagem", "type": "main", "index": 0 }]]
+    },
+    "Redis - Conferir Última Mensagem": {
+      "main": [[{ "node": "IF - É a Última do Burst?", "type": "main", "index": 0 }]]
+    },
+    "IF - É a Última do Burst?": {
+      "main": [
+        [{ "node": "Redis - Buscar Buffer Final", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Redis - Buscar Buffer Final": {
+      "main": [[{ "node": "Combinar Fragmentos", "type": "main", "index": 0 }]]
+    },
+    "Combinar Fragmentos": {
+      "main": [[{ "node": "Redis - Limpar Buffer", "type": "main", "index": 0 }]]
+    },
+    "Redis - Limpar Buffer": {
+      "main": [[{ "node": "Escolheu Departamento? (1-5)", "type": "main", "index": 0 }]]
+    },
+
     "Escolheu Departamento? (1-5)": {
       "main": [
         [{ "node": "Buscar Departamentos", "type": "main", "index": 0 }],
