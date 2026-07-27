@@ -71,10 +71,10 @@ export class MessagesService {
       // registro em banco (dto.mensagem) fica limpo, já que o frontend
       // mostra o atendente separadamente via mensagem.atendente.
       const assinatura = conversa.atendente
-        ? `*${conversa.atendente.nome}${conversa.atendente.departamento ? ` - ${conversa.atendente.departamento.codigo}` : ''}*`
+        ? `*${conversa.atendente.nome}${conversa.atendente.departamento ? ` - ${conversa.atendente.departamento.nome}:` : ''}*`
         : null;
       const textoWhatsapp = assinatura
-        ? `${assinatura}\n${dto.mensagem}`
+        ? `${assinatura}\n\n${dto.mensagem}`
         : dto.mensagem;
 
       await this.evolutionService.enviarMensagem(

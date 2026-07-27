@@ -23,7 +23,9 @@ Sistema de atendimento via WhatsApp com **um único número** para toda a empres
 atendimento-whatsapp-infra/   # docker-compose: Postgres, Redis, Evolution API, n8n, pgAdmin
 backend/                      # NestJS — dono de toda a regra de negócio
 frontend/                     # Next.js — painel do atendente
-n8n-workflow/                 # JSON exportado do workflow do n8n (versionado à parte, importado manualmente na UI do n8n)
+fluxo-completo-com-backend.json  # JSON exportado do workflow principal do n8n, na raiz do repo
+                                 # (versionado à parte, importado manualmente na UI do n8n — git push não afeta o n8n rodando)
+menu-departamentos.json          # JSON auxiliar (versão anterior/simplificada do menu)
 ```
 
 ## Separação de responsabilidades (não mexer nisso sem motivo forte)
@@ -67,7 +69,16 @@ Além de aparecer no painel (ver frontend), o texto enviado à Evolution API lev
 
 ### `GET /users` e `POST /users` nunca retornam `senha_hash`
 
-`UsersService.create`/`findAll` desestruturam o campo antes de devolver (`Omit<User, 'senha_hash'>`). Isso não existia originalmente — os dois métodos devolviam a entidade crua do TypeORM, vazando o hash bcrypt no JSON. Corrigido em 2026-07-24 ao construir a tela de gestão de usuários. **Manter esse padrão em qualquer novo método do `UsersService` que devolva `User`.**
+`UsersService.create`/`findAll` desestruturam o campo antes de devolver (`Omit<User, 'senha_hash'>`). Isso não existia originalmente — os dois métodos devolviam a entidade crua do TypeORM, vazando o hash bcrypt no JSON. Corrigido em 2026-07-24 ao construir a tela de gestão de usuários. **Manter esse padrão em qualquer novo método do `UsersService` que devolva `User`.** `update`/`setAtivo` (ver seção abaixo) já seguem o mesmo padrão.
+
+### Editar / inativar / excluir usuário (2026-07-27)
+
+`User` ganhou uma segunda coluna além de `ativo`: **`excluido_em`** (nullable, `timestamptz`, mesmo padrão de `Conversation.finalizado_em`). Os dois campos representam estados diferentes de propósito:
+
+- **Inativar** (`PATCH /users/:id/inactivate` → `UsersService.setAtivo(id, false)`): só `ativo = false`. Reversível via **Reativar** (`PATCH /users/:id/reactivate`). O usuário continua aparecendo no `GET /users`, só fica bloqueado de logar (reaproveita a checagem que já existia em `AuthService.login`). Uso esperado: férias, afastamento.
+- **Excluir** (`DELETE /users/:id` → `UsersService.remove`): `ativo = false` **e** `excluido_em = now()`. `UsersService.findAll` filtra `WHERE excluido_em IS NULL`, então o usuário some da lista — mas a linha continua no banco (não é um `DELETE` de verdade), porque `Message.atendente_id`/`Conversation.atendente_id` são FK pra `users` e apagar quebraria o histórico. **Não existe "desfazer" excluir pela UI.** Uso esperado: desligamento.
+
+`UsersController` ganhou `PATCH /users/:id` (editar nome/e-mail/senha/setor/papel, `UpdateUserDto` com todos os campos opcionais) além das duas rotas acima. Nenhuma rota nova tem guard de `role: admin` — mesmo trade-off de MVP já documentado (reforço só no frontend).
 
 ### Rotas sem autenticação (proposital, não é bug)
 
@@ -97,6 +108,27 @@ Pontos de atenção conhecidos:
 - `host.docker.internal` (usado pelo n8n pra chamar o backend, que roda fora do Docker) exige `extra_hosts: ["host.docker.internal:host-gateway"]` no serviço `n8n` do docker-compose, no Linux.
 - Node HTTP Request que retorna array (`GET /departments`) — o n8n separa cada elemento em um item diferente. Use `$('NomeDoNode').all().map(i => i.json)` pra reconstruir o array, nunca `$input.item.json` direto.
 
+### Debounce de mensagens fragmentadas (2026-07-27)
+
+Cliente sem conversa ativa que manda várias mensagens separadas em sequência (ex: "Oi", "bom dia", "preciso de ajuda") disparava uma execução do workflow **por mensagem** — como nenhuma batia o regex `^[1-5]$`, o cliente recebia o menu de departamentos repetido várias vezes. Corrigido com um "debounce" via Redis, inserido só no ramo `Verificar Conversa Ativa` (404, sem conversa) → antes de `Escolheu Departamento? (1-5)`:
+
+1. Cada execução acumula seu texto num buffer Redis por telefone (`buffer:<telefone>`, TTL 30s) e grava um marcador (`latest:<telefone>` = `{{$execution.id}}`, TTL 30s).
+2. Espera 6s (node **Wait - Aguardar Fragmentos**).
+3. Relê o marcador: se ainda for o `$execution.id` desta execução, é a última mensagem da rajada — segue o fluxo lendo o buffer completo (node **Combinar Fragmentos**, que substitui `Extrair Dados da Mensagem` como fonte de `texto`/`telefone`/`nome`/`instance` só neste ramo). Se mudou, uma execução mais nova já assumiu — a antiga simplesmente para (branch falso do IF sem conexão).
+
+**Escopo deliberadamente limitado**: só o ramo "sem conversa ativa". Mensagens de um cliente já em atendimento com um atendente humano continuam chegando uma a uma no painel — não tem debounce aí, e mensagens que o atendente manda pelo painel nem passam por esse workflow (vão direto backend → Evolution).
+
+Usa o Redis do `docker-compose.yml` (banco `0`, padrão) — não conflita com o banco `1` que a Evolution API já usa pra cache (`CACHE_REDIS_URI: redis://redis:6379/1`). **Credencial Redis não vem no JSON exportado** (por segurança) — depois de reimportar o workflow, é preciso criar/selecionar uma credencial Redis na UI do n8n (host `redis`, porta `6379`, sem usuário/senha, banco `0`) nos 6 nós novos.
+
+### Incidente: instância WhatsApp desconectada (2026-07-27)
+
+Sintoma: mensagens reais do WhatsApp paravam de aparecer em **Executions** no n8n, mesmo com o webhook configurado certo e o workflow `Active`. Diagnóstico (nesta ordem, vale repetir se acontecer de novo):
+1. `curl -X POST http://localhost:5678/webhook/whatsapp` direto com payload de teste → respondeu 200 e gerou execução → **descarta problema no n8n/workflow**.
+2. `docker logs evolution_api` → `"conflict","type":"device_removed"` seguido de `LOGOUT` da instância.
+3. `GET /instance/connectionState/atendimento-empresa` (Evolution API) → `"state":"close"`.
+
+Causa: a sessão do WhatsApp (dispositivo vinculado) foi removida do lado do celular/WhatsApp — não é bug do sistema. **Solução**: Manager da Evolution API (`http://localhost:8089/manager`) → localizar a instância → reconectar e escanear o QR Code de novo.
+
 ## Frontend — estrutura e convenções
 
 ```
@@ -109,10 +141,10 @@ frontend/src/
 │       ├── fila/                # lista por setor, abas aguardando/em_atendimento, botão Assumir
 │       ├── conversas/[id]/       # chat: histórico, envio, Transferir, Finalizar
 │       ├── dashboard/           # contadores por status (+ breakdown por setor pro admin)
-│       └── usuarios/            # só admin — listar + criar atendentes/admins (ver seção própria abaixo)
+│       └── usuarios/            # só admin — listar/criar/editar/inativar/excluir atendentes/admins (ver seção própria abaixo)
 ├── components/
 │   ├── LiveQueuePanel.tsx     # amostra ilustrativa na tela de login (dados locais, não é a fila real)
-│   └── ui/                    # Button, Field, Select, StatusBadge
+│   └── ui/                    # Button, Field, Select, StatusBadge, ConfirmModal
 ├── hooks/         # useAuth (contexto), useTheme, useDepartments (contexto), useSocketEvent
 ├── lib/           # api.ts (axios + interceptor de token), socket.ts (singleton do socket.io-client), time.ts
 └── types/         # espelham as entidades do backend
@@ -128,13 +160,19 @@ Não existe `GET /conversations/:id` no backend — só `GET /conversations` (li
 - Tema claro/escuro via classe `.dark` no `<html>`, tokens de cor em `globals.css` (`--surface`, `--surface-raised`, `--text-primary` etc.), preferência salva em `localStorage`.
 - Tempo real: um único socket (`lib/socket.ts`) compartilhado pela sessão. `useSocketEvent(evento, handler)` assina/desassina no ciclo de vida do componente sem exigir handler memoizado. Nas telas de fila/dashboard, qualquer um dos três eventos (`nova_conversa`, `conversa_atualizada`, `conversa_finalizada`) simplesmente **recarrega a lista** respeitando os filtros atuais — não há merge otimista de estado local. Foi a escolha deliberada pra manter a primeira integração ponta a ponta do WebSocket simples e correta, mesmo custando uma requisição extra por evento.
 
-### Gestão de usuários — `/usuarios` (só admin, 2026-07-24)
+### Gestão de usuários — `/usuarios` (só admin, 2026-07-24; editar/inativar/excluir/busca em 2026-07-27)
 
 Item de nav "Usuários" (`NAV_ADMIN` em `layout.tsx`) só aparece quando `user.role === 'admin'`; a própria página redireciona (`router.replace('/fila')`) se um não-admin acessar a URL direto. Isso é reforço **só no frontend** — igual ao filtro de setor em `fila`/`dashboard`, o backend (`UsersController`) não tem guard de `role: admin`, só `JwtAuthGuard`. Mesmo trade-off de MVP já documentado, não é descuido.
 
-Tela lista usuários (`GET /users`) e tem formulário inline (padrão do "Transferir" em `conversas/[id]`) pra criar (`POST /users`): nome, e-mail, senha, setor (opcional), papel. `lib/api.ts` expõe `getUsers`/`createUser`, tipo `CreateUserPayload` em `types/index.ts`.
+Tela lista usuários (`GET /users`) com busca client-side (filtra por nome/e-mail, sem parâmetro novo no backend — mesma lógica de confiança client-side já usada em `fila`/`dashboard`) e um formulário inline reaproveitado tanto pra criar (`POST /users`) quanto pra editar (`PATCH /users/:id`) — o mesmo form alterna de modo conforme o estado `editando`. `lib/api.ts` expõe `getUsers`/`createUser`/`updateUser`/`inactivateUser`/`reactivateUser`/`deleteUser`; tipos `CreateUserPayload`/`UpdateUserPayload` em `types/index.ts`.
 
-**Só criar, ainda não tem editar/inativar/excluir** — ver "Próximos passos".
+Cada linha tem três ações: **Editar** (abre o form preenchido), **Inativar/Reativar** (alterna conforme `u.ativo`, só Inativar pede confirmação — Reativar é sempre reversível) e **Excluir** (soft-delete, ver seção do backend). Inativar e Excluir usam o `ConfirmModal` (ver abaixo); Reativar não, por ser uma ação não-destrutiva.
+
+### `ConfirmModal` — substituiu `window.confirm` (2026-07-27)
+
+`components/ui/ConfirmModal.tsx`: modal de confirmação renderizado via `createPortal` em `document.body`, com Escape/clique no backdrop pra cancelar, prop `loading` (spinner no botão de confirmar enquanto a ação assíncrona roda) e `variant="danger"` (vermelho, ícone de alerta) pra ações destrutivas. Motivo: `window.confirm` tem aparência de navegador, destoando da identidade visual do painel.
+
+Usado em três lugares hoje: **Finalizar conversa** (`conversas/[id]/page.tsx`), **Inativar** e **Excluir usuário** (`usuarios/page.tsx`, `variant="danger"` só no Excluir). Qualquer confirmação nova no painel deve reaproveitar esse componente, não voltar pro `window.confirm`.
 
 ### Identidade visual (não trocar sem motivo — já foi definida com o usuário)
 
@@ -161,7 +199,9 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 - [x] Frontend testado manualmente pelo navegador contra o backend + Postgres reais (2026-07-24): login → fila → Assumir → chat → Transferir/Finalizar, com Socket.IO ao vivo. Validado pelo usuário.
 - [x] Fluxo real via WhatsApp testado (2026-07-24), webhook por instância configurado no Manager da Evolution API (Events → Webhook → `http://n8n:5678/webhook/whatsapp`). Validado pelo usuário.
 - [x] Mensagens do atendente levam assinatura "Nome - CÓDIGO" no WhatsApp do cliente (2026-07-24), testado via WhatsApp real e validado pelo usuário. Ver "Mensagens — assinatura do atendente" acima.
-- [x] Tela `/usuarios` (só admin): listar + criar usuários, com correção de `senha_hash` vazando na resposta da API. Ver "Gestão de usuários" acima. **Ainda falta editar/inativar/excluir — próxima tarefa pedida pelo usuário.**
+- [x] Tela `/usuarios` (só admin): listar, criar, **editar, inativar/reativar e excluir (soft-delete)** usuários, com busca client-side e correção de `senha_hash` vazando na resposta da API. Ver "Gestão de usuários" e "Editar / inativar / excluir usuário" acima.
+- [x] `ConfirmModal` substituindo `window.confirm` em Finalizar conversa, Inativar e Excluir usuário (2026-07-27). Ver seção própria acima.
+- [x] Debounce de mensagens fragmentadas no n8n (via Redis), aplicado só no ramo sem conversa ativa (2026-07-27). Ver "Debounce de mensagens fragmentadas" acima. **Lógica implementada e validada via curl; falta reconectar a instância do WhatsApp (ver "Incidente" acima) e testar com mensagens fragmentadas reais.**
 
 ## Ambiente de desenvolvimento
 
@@ -180,12 +220,16 @@ Corrigido também `WEBHOOK_GLOBAL_ENABLED` no `docker-compose.yml` (estava `"tru
 
 Depois desses ajustes: os 5 containers sobem saudáveis, `npm run seed` cria os 5 departamentos + admin, login/`GET departments`/`POST conversations`/`assume`/`finish`/Socket.IO handshake testados manualmente via curl e funcionando ponta a ponta no nível de API. **Ainda não testado**: o frontend consumindo isso ao vivo, e o fluxo real via WhatsApp/Evolution/n8n (falta configurar o webhook por instância no Manager da Evolution API).
 
-## Próximos passos (pedido pelo usuário em 2026-07-24, ainda não iniciado)
+## Próximos passos
 
-Depois da tela `/usuarios` (listar + criar), adicionar: **editar usuário**, **Filtro de busca**, **inativar usuário**. Nada disso existe ainda no backend — `UsersController` só tem `GET` e `POST`. Pontos a considerar ao implementar (não decisões já tomadas, só contexto pra próxima sessão):
+Itens da sessão de 2026-07-24 (editar/inativar/excluir/busca em `/usuarios`) **já concluídos** — ver "Status atual do projeto" e "Editar / inativar / excluir usuário" acima.
 
-- `User.ativo` (boolean, default `true`) **já existe na entity** (`users/entities/user.entity.ts`) mas não é lido em lugar nenhum hoje — nem no login (`AuthService.login` já checa `!user.ativo` e barra login, isso já funciona), nem exposto pela API, nem editável. "Inativar" provavelmente é só um `PATCH` que vira esse campo `false`, reaproveitando a checagem que já existe no login.
-- "Excluir" de verdade (`DELETE`) esbarra em `Message.atendente_id` e `Conversation.atendente_id`, que são FK pra `users` — apagar um usuário com histórico de mensagens/conversas vai quebrar ou exigir `ON DELETE SET NULL`/restrição. Vale considerar se "excluir" devia ser só "inativar" disfarçado, para que não quebre o sistema, porém ao excluir quero que ao excluir somente inative porém não apareça na lista do GET ALL USERS.
+Sugestões levantadas pelo Claude em 2026-07-27 (ainda **não** pedidas pelo usuário — avaliar antes de implementar):
+
+- **Testar o debounce com WhatsApp real**: a lógica foi validada via `curl` direto no webhook, mas ainda não com mensagens fragmentadas reais — depende de reconectar a instância primeiro (ver "Incidente: instância WhatsApp desconectada"). Se 6s se mostrar curto/longo na prática, é só ajustar o node `Wait - Aguardar Fragmentos`.
+- **Guard de `role: admin` no backend**: hoje `UsersController` só tem `JwtAuthGuard`, sem checar papel — qualquer atendente autenticado pode chamar `PATCH/DELETE /users/:id` direto via API (o frontend esconde a tela, mas não protege a rota). Como agora existem ações destrutivas (excluir/inativar usuário), vale a pena antes de produção real.
+- **Alerta de desconexão do WhatsApp**: o incidente de hoje (instância caiu, `state: "close"`) só foi percebido porque o usuário notou que mensagens não chegavam. Um healthcheck simples (ex: schedule no n8n batendo em `GET /instance/connectionState/:instance` de tempos em tempos e avisando se `state !== "open"`) evitaria descobrir isso "no escuro".
+- **Chave compartilhada n8n↔backend** e **migrations no lugar de `TYPEORM_SYNCHRONIZE`** — já eram trade-offs de MVP documentados antes de hoje (ver "Rotas sem autenticação" e "Ambiente" acima), continuam pendentes antes de produção real.
 
 ## O que evitar sugerir
 

@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -36,7 +43,9 @@ export default function ConversaPage() {
   const router = useRouter();
   const { departments } = useDepartments();
 
-  const [conversa, setConversa] = useState<Conversation | null | undefined>(undefined);
+  const [conversa, setConversa] = useState<Conversation | null | undefined>(
+    undefined,
+  );
   const [mensagens, setMensagens] = useState<Message[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [texto, setTexto] = useState("");
@@ -69,7 +78,10 @@ export default function ConversaPage() {
   }, [carregar]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [mensagens.length]);
 
   useSocketEvent<Message>("nova_mensagem", (mensagem) => {
@@ -157,7 +169,9 @@ export default function ConversaPage() {
   if (conversa === null) {
     return (
       <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-app py-16 text-center">
-        <p className="text-[0.875rem] text-secondary">Conversa não encontrada.</p>
+        <p className="text-[0.875rem] text-secondary">
+          Conversa não encontrada.
+        </p>
         <Button variant="ghost" onClick={() => router.push("/fila")}>
           Voltar para a fila
         </Button>
@@ -268,7 +282,12 @@ export default function ConversaPage() {
             />
           </div>
 
-          <Button type="submit" loading={enviandoTransfer} disabled={!transferDeptId} className="!px-4 !py-3">
+          <Button
+            type="submit"
+            loading={enviandoTransfer}
+            disabled={!transferDeptId}
+            className="!px-4 !py-3"
+          >
             Confirmar
           </Button>
         </form>
@@ -276,7 +295,11 @@ export default function ConversaPage() {
 
       {erro && (
         <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-alert/35 bg-alert/8 px-4 py-3">
-          <AlertCircle size={17} className="mt-px shrink-0 text-alert" aria-hidden="true" />
+          <AlertCircle
+            size={17}
+            className="mt-px shrink-0 text-alert"
+            aria-hidden="true"
+          />
           <p className="text-[0.875rem] leading-snug text-primary">{erro}</p>
         </div>
       )}
@@ -286,7 +309,9 @@ export default function ConversaPage() {
         className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-app bg-surface p-4"
       >
         {mensagens.length === 0 && (
-          <p className="py-8 text-center text-[0.875rem] text-muted">Nenhuma mensagem ainda.</p>
+          <p className="py-8 text-center text-[0.875rem] text-muted">
+            Nenhuma mensagem ainda.
+          </p>
         )}
 
         {mensagens.map((m) =>
@@ -303,8 +328,9 @@ export default function ConversaPage() {
             >
               {m.origem === "atendente" && m.atendente && (
                 <span className="mb-1 px-1 text-[0.75rem] font-semibold text-tide-400">
-                  {m.atendente.nome}
-                  {m.atendente.departamento && ` - ${m.atendente.departamento.codigo}`}
+                  {m.atendente.nome .trim() .split(" ") .slice(0, 2) .join(" ")}
+                  {m.atendente.departamento &&
+                    ` - ${m.atendente.departamento.nome.toUpperCase()}`}
                 </span>
               )}
               <div
@@ -317,7 +343,9 @@ export default function ConversaPage() {
                 <p className="whitespace-pre-wrap">{m.mensagem}</p>
                 <p
                   className={`mt-1 text-[0.6875rem] ${
-                    m.origem === "atendente" ? "text-abyss-900/60" : "text-muted"
+                    m.origem === "atendente"
+                      ? "text-abyss-900/60"
+                      : "text-muted"
                   }`}
                 >
                   {formatTime(m.criado_em)}
