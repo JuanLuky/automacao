@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { assumeConversation, getConversations, normalizeError } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
@@ -22,6 +23,7 @@ export default function FilaPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { departments } = useDepartments();
+  const { unreadByConversation } = useNotifications();
 
   const isAdmin = user?.role === "admin";
   const [tab, setTab] = useState<ConversationStatus>("aguardando");
@@ -163,6 +165,14 @@ export default function FilaPage() {
                     {c.departamento && (
                       <span className="text-eyebrow font-semibold uppercase text-tide-400">
                         {c.departamento.nome}
+                      </span>
+                    )}
+                    {unreadByConversation[c.id] > 0 && (
+                      <span
+                        className="flex h-5 min-w-5 items-center justify-center rounded-full bg-alert px-1.5 text-[0.6875rem] font-semibold text-white"
+                        aria-label={`${unreadByConversation[c.id]} mensagens não lidas`}
+                      >
+                        {unreadByConversation[c.id]}
                       </span>
                     )}
                   </div>

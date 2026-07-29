@@ -31,6 +31,11 @@ export interface Message {
   criado_em: string;
   conversation_id: string;
   atendente?: User | null;
+  // Só vêm preenchidos no payload do evento "nova_mensagem" via socket
+  // (ver MessagesService.create no backend) — não fazem parte do histórico
+  // retornado por GET /conversations/:id/messages.
+  cliente_nome?: string | null;
+  conversa_atendente_id?: string | null;
 }
 
 export interface Conversation {

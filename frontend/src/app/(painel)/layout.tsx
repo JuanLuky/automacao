@@ -16,6 +16,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { DepartmentsProvider } from "@/hooks/useDepartments";
+import { NotificationsProvider } from "@/hooks/useNotifications";
 
 const NAV = [
   { href: "/fila", label: "Fila", icon: ListChecks },
@@ -51,73 +52,75 @@ export default function PainelLayout({
 
   return (
     <DepartmentsProvider>
-      <div className="min-h-screen bg-surface">
-        <header className="sticky top-0 z-10 border-b border-app bg-raised/80 backdrop-blur">
-          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-            <div className="flex items-center gap-8">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-tide-500/15 ring-1 ring-tide-500/30">
-                  <Waves size={16} className="text-tide-500" />
+      <NotificationsProvider>
+        <div className="min-h-screen bg-surface">
+          <header className="sticky top-0 z-10 border-b border-app bg-raised/80 backdrop-blur">
+            <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+              <div className="flex items-center gap-8">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-tide-500/15 ring-1 ring-tide-500/30">
+                    <Waves size={16} className="text-tide-500" />
+                  </div>
+                  <span className="font-display text-base font-semibold tracking-tight text-primary">
+                    Maré
+                  </span>
                 </div>
-                <span className="font-display text-base font-semibold tracking-tight text-primary">
-                  Maré
-                </span>
+
+                <nav className="flex items-center gap-1">
+                  {[...NAV, ...(user?.role === "admin" ? NAV_ADMIN : [])].map(({ href, label, icon: Icon }) => {
+                    const active = pathname?.startsWith(href);
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-[0.875rem] font-medium transition-colors ${
+                          active
+                            ? "bg-tide-500/12 text-tide-500"
+                            : "text-secondary hover:bg-sunken hover:text-primary"
+                        }`}
+                      >
+                        <Icon size={15} />
+                        {label}
+                      </Link>
+                    );
+                  })}
+                </nav>
               </div>
 
-              <nav className="flex items-center gap-1">
-                {[...NAV, ...(user?.role === "admin" ? NAV_ADMIN : [])].map(({ href, label, icon: Icon }) => {
-                  const active = pathname?.startsWith(href);
-                  return (
-                    <Link
-                      key={href}
-                      href={href}
-                      className={`flex items-center gap-2 rounded-lg px-3 py-2 text-[0.875rem] font-medium transition-colors ${
-                        active
-                          ? "bg-tide-500/12 text-tide-500"
-                          : "text-secondary hover:bg-sunken hover:text-primary"
-                      }`}
-                    >
-                      <Icon size={15} />
-                      {label}
-                    </Link>
-                  );
-                })}
-              </nav>
-            </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggle}
+                  aria-label={theme === "dark" ? "Usar tema claro" : "Usar tema escuro"}
+                  className="rounded-lg border border-app p-2 text-secondary transition-colors hover:border-mist-500 hover:text-primary"
+                >
+                  {mounted && theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                </button>
 
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={toggle}
-                aria-label={theme === "dark" ? "Usar tema claro" : "Usar tema escuro"}
-                className="rounded-lg border border-app p-2 text-secondary transition-colors hover:border-mist-500 hover:text-primary"
-              >
-                {mounted && theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-              </button>
+                <div className="hidden text-right sm:block">
+                  <p className="text-[0.8125rem] font-medium text-primary">
+                    {user?.nome}
+                  </p>
+                  <p className="text-[0.6875rem] uppercase tracking-wide text-muted">
+                    {user?.role === "admin" ? "Administrador" : "Atendente"}
+                  </p>
+                </div>
 
-              <div className="hidden text-right sm:block">
-                <p className="text-[0.8125rem] font-medium text-primary">
-                  {user?.nome}
-                </p>
-                <p className="text-[0.6875rem] uppercase tracking-wide text-muted">
-                  {user?.role === "admin" ? "Administrador" : "Atendente"}
-                </p>
+                <button
+                  type="button"
+                  onClick={signOut}
+                  aria-label="Sair"
+                  className="rounded-lg border border-app p-2 text-secondary transition-colors hover:border-alert/50 hover:text-alert"
+                >
+                  <LogOut size={16} />
+                </button>
               </div>
-
-              <button
-                type="button"
-                onClick={signOut}
-                aria-label="Sair"
-                className="rounded-lg border border-app p-2 text-secondary transition-colors hover:border-alert/50 hover:text-alert"
-              >
-                <LogOut size={16} />
-              </button>
             </div>
-          </div>
-        </header>
+          </header>
 
-        <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
-      </div>
+          <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+        </div>
+      </NotificationsProvider>
     </DepartmentsProvider>
   );
 }

@@ -106,7 +106,15 @@ export class MessagesService {
       );
     }
 
-    this.eventsGateway.emitNovaMensagem(mensagem);
+    // cliente_nome/conversa_atendente_id só existem no payload do socket (não
+    // persistidos em Message) — dão pro frontend montar a notificação
+    // ("Nova mensagem de Fulano") e decidir de quem é a conversa sem precisar
+    // buscar isso separadamente.
+    this.eventsGateway.emitNovaMensagem({
+      ...mensagem,
+      cliente_nome: conversa.cliente_nome,
+      conversa_atendente_id: conversa.atendente_id,
+    });
     return mensagem;
   }
 }

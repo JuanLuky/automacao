@@ -202,6 +202,19 @@ Tela lista usuários (`GET /users`) com busca client-side (filtra por nome/e-mai
 
 Cada linha tem três ações: **Editar** (abre o form preenchido), **Inativar/Reativar** (alterna conforme `u.ativo`, só Inativar pede confirmação — Reativar é sempre reversível) e **Excluir** (soft-delete, ver seção do backend). Inativar e Excluir usam o `ConfirmModal` (ver abaixo); Reativar não, por ser uma ação não-destrutiva.
 
+### Notificações de mensagem — badge + toast (2026-07-29)
+
+Cenário do usuário: atendente está no chat de um cliente A quando um cliente B (conversa `em_atendimento` já assumida, esperando resposta) manda uma mensagem nova — sem alerta, isso só seria percebido se o atendente voltasse pra fila manualmente.
+
+Implementado inteiramente **client-side**, sem nova tabela/coluna no backend — segue a mesma filosofia MVP já documentada (estado efêmero, resetado a cada refresh, igual ao resto do realtime do projeto). Ver "Regras de negócio no frontend" acima sobre o padrão de simplesmente recarregar listas via socket.
+
+- `frontend/src/hooks/useNotifications.tsx`: `NotificationsProvider`, montado em `(painel)/layout.tsx` (dentro de `DepartmentsProvider`, disponível em toda tela protegida). Escuta `nova_mensagem` globalmente e mantém `unreadByConversation: Record<conversationId, count>` + uma pilha de toasts.
+- Só reage a mensagens com `origem === "cliente"` **da conversa que o próprio atendente logado tem assumida** (compara `mensagem.conversa_atendente_id === user.id`) — evita alertar sobre atendimento de outra pessoa. E ignora a conversa que já está aberta na tela (`pathname === /conversas/:id`), já que o chat já mostra a mensagem ao vivo.
+- **Backend precisou expor 2 campos que só existiam no `Conversation`, não no `Message`**: `MessagesService.create` (`backend/src/messages/messages.service.ts`) monta o payload do evento `nova_mensagem` como `{ ...mensagem, cliente_nome: conversa.cliente_nome, conversa_atendente_id: conversa.atendente_id }` — só no socket, não persiste em `Message` nem muda a resposta HTTP em campos que já existiam. Deliberadamente **não** chamado `atendente_id` pra não colidir com o campo homônimo de `Message` (que é quem *enviou* aquela mensagem, não quem está assumindo a conversa).
+- **Badge**: contator estilo WhatsApp (círculo vermelho, cor `alert`) ao lado do nome do cliente na lista da `/fila` (só aparece na aba "Em atendimento", já que só conversas assumidas pelo próprio atendente geram contagem). Zerado via `clearUnread(id)`, chamado num `useEffect` em `conversas/[id]/page.tsx` sempre que a conversa é aberta.
+- **Toast**: canto inferior direito da tela (fixed, `z-50`), aparece em qualquer tela do painel, clicável (navega direto pra conversa) e some sozinho depois de 6s.
+- **Não testado ainda com WhatsApp real** — só `tsc --noEmit` e `next build` (ambos limpos). Falta validar o cenário completo (duas conversas simultâneas, uma delas fora de tela) no navegador.
+
 ### `ConfirmModal` — substituiu `window.confirm` (2026-07-27)
 
 `components/ui/ConfirmModal.tsx`: modal de confirmação renderizado via `createPortal` em `document.body`, com Escape/clique no backdrop pra cancelar, prop `loading` (spinner no botão de confirmar enquanto a ação assíncrona roda) e `variant="danger"` (vermelho, ícone de alerta) pra ações destrutivas. Motivo: `window.confirm` tem aparência de navegador, destoando da identidade visual do painel.
@@ -238,6 +251,7 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 - [x] Debounce de mensagens fragmentadas no n8n (via Redis), aplicado só no ramo sem conversa ativa (2026-07-27), **testado com WhatsApp real em 2026-07-29 e validado pelo usuário** — 6s funcionou bem, sem necessidade de ajuste. Ver "Debounce de mensagens fragmentadas" acima.
 - [x] Guard de `role: admin` em todas as rotas de `/users` no backend (2026-07-29), via `RolesGuard` + `@Roles`. Ver "Guard de `role: admin` no backend" acima.
 - [x] Healthcheck de conexão do WhatsApp no n8n (2026-07-29), a cada 5min, com alerta por e-mail (dedup via Redis, TTL 1h) quando a instância cai. Ver "Alerta de desconexão do WhatsApp" acima. **Nós adicionados no JSON, mas ainda não reimportado no n8n nem testado — falta configurar a credencial SMTP.**
+- [x] Badge de mensagens não lidas na fila + toast de notificação no canto da tela (2026-07-29), pra avisar quando um cliente de uma conversa já assumida manda mensagem enquanto o atendente está em outra tela/conversa. Ver "Notificações de mensagem" acima. **`tsc`/`next build` limpos, ainda não testado no navegador/WhatsApp real.**
 
 ## Ambiente de desenvolvimento
 

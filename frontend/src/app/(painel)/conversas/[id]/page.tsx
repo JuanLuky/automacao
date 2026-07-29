@@ -24,6 +24,7 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useDepartments } from "@/hooks/useDepartments";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import {
   finishConversation,
@@ -42,6 +43,7 @@ export default function ConversaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { departments } = useDepartments();
+  const { clearUnread } = useNotifications();
 
   const [conversa, setConversa] = useState<Conversation | null | undefined>(
     undefined,
@@ -76,6 +78,11 @@ export default function ConversaPage() {
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  // Abrir a conversa marca as mensagens dela como lidas para o badge/toast.
+  useEffect(() => {
+    clearUnread(id);
+  }, [id, clearUnread]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
