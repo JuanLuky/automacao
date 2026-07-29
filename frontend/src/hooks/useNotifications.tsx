@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import type { Message } from "@/types";
@@ -41,12 +41,15 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   >({});
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  // Abrir a conversa (pelo badge, pelo toast ou pela fila) limpa as duas coisas —
+  // não faz sentido o toast continuar empilhado se o atendente já viu a mensagem.
   const clearUnread = useCallback((conversationId: string) => {
     setUnreadByConversation((atual) => {
       if (!atual[conversationId]) return atual;
       const { [conversationId]: _removido, ...resto } = atual;
       return resto;
     });
+    setToasts((atual) => atual.filter((t) => t.conversationId !== conversationId));
   }, []);
 
   const dismissToast = useCallback((toastId: string) => {
@@ -90,24 +93,36 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
       <div className="pointer-events-none fixed bottom-6 right-6 z-50 flex w-full max-w-sm flex-col gap-2.5">
         {toasts.map((toast) => (
-          <button
+          <div
             key={toast.id}
-            type="button"
-            onClick={() => handleToastClick(toast)}
-            className="animate-queue-in pointer-events-auto flex items-start gap-3 rounded-xl border border-app bg-raised p-4 text-left shadow-lg shadow-black/10 transition-transform hover:-translate-y-0.5"
+            className="animate-queue-in pointer-events-auto flex items-start gap-3 rounded-xl border border-app bg-raised p-4 shadow-lg shadow-black/10"
           >
             <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-tide-500/15 text-tide-500">
               <MessageCircle size={15} />
             </span>
-            <div className="min-w-0">
+
+            <button
+              type="button"
+              onClick={() => handleToastClick(toast)}
+              className="min-w-0 flex-1 text-left"
+            >
               <p className="text-[0.8125rem] font-semibold text-primary">
-                Nova mensagem de {toast.clienteNome}
+                {toast.clienteNome} enviou uma nova mensagem
               </p>
               <p className="mt-0.5 truncate text-[0.8125rem] text-secondary">
                 {toast.mensagem}
               </p>
-            </div>
-          </button>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => dismissToast(toast.id)}
+              aria-label="Dispensar notificação"
+              className="mt-0.5 shrink-0 rounded-lg p-1 text-muted transition-colors hover:bg-sunken hover:text-primary"
+            >
+              <X size={14} />
+            </button>
+          </div>
         ))}
       </div>
     </NotificationsContext.Provider>

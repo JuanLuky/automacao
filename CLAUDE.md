@@ -179,7 +179,7 @@ frontend/src/
 ├── components/
 │   ├── LiveQueuePanel.tsx     # amostra ilustrativa na tela de login (dados locais, não é a fila real)
 │   └── ui/                    # Button, Field, Select, StatusBadge, ConfirmModal
-├── hooks/         # useAuth (contexto), useTheme, useDepartments (contexto), useSocketEvent
+├── hooks/         # useAuth (contexto), useTheme, useDepartments (contexto), useSocketEvent, useNotifications (contexto)
 ├── lib/           # api.ts (axios + interceptor de token), socket.ts (singleton do socket.io-client), time.ts
 └── types/         # espelham as entidades do backend
 ```
@@ -212,8 +212,14 @@ Implementado inteiramente **client-side**, sem nova tabela/coluna no backend —
 - Só reage a mensagens com `origem === "cliente"` **da conversa que o próprio atendente logado tem assumida** (compara `mensagem.conversa_atendente_id === user.id`) — evita alertar sobre atendimento de outra pessoa. E ignora a conversa que já está aberta na tela (`pathname === /conversas/:id`), já que o chat já mostra a mensagem ao vivo.
 - **Backend precisou expor 2 campos que só existiam no `Conversation`, não no `Message`**: `MessagesService.create` (`backend/src/messages/messages.service.ts`) monta o payload do evento `nova_mensagem` como `{ ...mensagem, cliente_nome: conversa.cliente_nome, conversa_atendente_id: conversa.atendente_id }` — só no socket, não persiste em `Message` nem muda a resposta HTTP em campos que já existiam. Deliberadamente **não** chamado `atendente_id` pra não colidir com o campo homônimo de `Message` (que é quem *enviou* aquela mensagem, não quem está assumindo a conversa).
 - **Badge**: contator estilo WhatsApp (círculo vermelho, cor `alert`) ao lado do nome do cliente na lista da `/fila` (só aparece na aba "Em atendimento", já que só conversas assumidas pelo próprio atendente geram contagem). Zerado via `clearUnread(id)`, chamado num `useEffect` em `conversas/[id]/page.tsx` sempre que a conversa é aberta.
-- **Toast**: canto inferior direito da tela (fixed, `z-50`), aparece em qualquer tela do painel, clicável (navega direto pra conversa) e some sozinho depois de 6s.
-- **Não testado ainda com WhatsApp real** — só `tsc --noEmit` e `next build` (ambos limpos). Falta validar o cenário completo (duas conversas simultâneas, uma delas fora de tela) no navegador.
+- **Toast**: canto inferior direito da tela (fixed, `z-50`), aparece em qualquer tela do painel, clicável (navega direto pra conversa), tem botão de fechar manual (`X`) e some sozinho depois de 6s (`TOAST_DURATION_MS`).
+- **Testado com WhatsApp real em 2026-07-29 e validado pelo usuário** (mensagem de cliente numa conversa assumida → badge na fila + toast no canto, em qualquer rota do painel). Ver bug do content glob do Tailwind logo abaixo — foi o motivo do toast não aparecer na primeira rodada de teste.
+
+#### Bug: toast invisível — `src/hooks/` fora do `content` do Tailwind (2026-07-29)
+
+Primeiro teste real: o badge aparecia, mas o toast não — em nenhuma rota. Causa: `tailwind.config.ts` só tinha `./src/app/**` e `./src/components/**` no array `content`; `useNotifications.tsx` foi o **primeiro arquivo em `src/hooks/` a usar `className`**, então o Tailwind nunca escaneou esse arquivo e não gerou CSS pras classes do toast (`fixed`, `bottom-6`, `right-6`, `z-50`, `animate-queue-in` etc.). O elemento existia no DOM normalmente (por isso o badge, que vem do mesmo `setState`, sempre funcionou) — só ficava sem nenhum estilo, caindo como uma `div` comum no final do fluxo da página, invisível sem rolar até o fim.
+
+**Corrigido** adicionando `"./src/hooks/**/*.{js,ts,jsx,tsx,mdx}"` ao `content` de `tailwind.config.ts`. **Vale lembrar disso pra qualquer pasta nova que passe a ter JSX/`className`** (ex: se `lib/` ou `types/` um dia ganhar um componente) — o Tailwind não avisa em build, ele só silenciosamente não gera a classe.
 
 ### `ConfirmModal` — substituiu `window.confirm` (2026-07-27)
 
@@ -251,7 +257,7 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 - [x] Debounce de mensagens fragmentadas no n8n (via Redis), aplicado só no ramo sem conversa ativa (2026-07-27), **testado com WhatsApp real em 2026-07-29 e validado pelo usuário** — 6s funcionou bem, sem necessidade de ajuste. Ver "Debounce de mensagens fragmentadas" acima.
 - [x] Guard de `role: admin` em todas as rotas de `/users` no backend (2026-07-29), via `RolesGuard` + `@Roles`. Ver "Guard de `role: admin` no backend" acima.
 - [x] Healthcheck de conexão do WhatsApp no n8n (2026-07-29), a cada 5min, com alerta por e-mail (dedup via Redis, TTL 1h) quando a instância cai. Ver "Alerta de desconexão do WhatsApp" acima. **Nós adicionados no JSON, mas ainda não reimportado no n8n nem testado — falta configurar a credencial SMTP.**
-- [x] Badge de mensagens não lidas na fila + toast de notificação no canto da tela (2026-07-29), pra avisar quando um cliente de uma conversa já assumida manda mensagem enquanto o atendente está em outra tela/conversa. Ver "Notificações de mensagem" acima. **`tsc`/`next build` limpos, ainda não testado no navegador/WhatsApp real.**
+- [x] Badge de mensagens não lidas na fila + toast de notificação no canto da tela (2026-07-29), pra avisar quando um cliente de uma conversa já assumida manda mensagem enquanto o atendente está em outra tela/conversa. **Testado com WhatsApp real e validado pelo usuário** — ver "Notificações de mensagem" acima, incluindo o bug do content glob do Tailwind (`src/hooks/` fora do scan) que fazia o toast ficar invisível na primeira rodada de teste.
 
 ## Ambiente de desenvolvimento
 
@@ -272,12 +278,16 @@ Depois desses ajustes: os 5 containers sobem saudáveis, `npm run seed` cria os 
 
 ## Próximos passos
 
-Itens da sessão de 2026-07-24 (editar/inativar/excluir/busca em `/usuarios`) **já concluídos** — ver "Status atual do projeto" e "Editar / inativar / excluir usuário" acima.
+Itens das sessões de 2026-07-24/27 (editar/inativar/excluir/busca em `/usuarios`, debounce de fragmentos testado com WhatsApp real) **já concluídos** — ver "Status atual do projeto" acima.
 
-Sugestões levantadas pelo Claude em 2026-07-27 (ainda **não** pedidas pelo usuário — avaliar antes de implementar):
+Pendências concretas (itens já implementados nesta sessão de 2026-07-29, faltando só validação/config final):
 
-- **Testar o debounce com WhatsApp real**: a lógica foi validada via `curl` direto no webhook, mas ainda não com mensagens fragmentadas reais — depende de reconectar a instância primeiro (ver "Incidente: instância WhatsApp desconectada"). Se 6s se mostrar curto/longo na prática, é só ajustar o node `Wait - Aguardar Fragmentos`.
-- **Chave compartilhada n8n↔backend** e **migrations no lugar de `TYPEORM_SYNCHRONIZE`** — já eram trade-offs de MVP documentados antes de hoje (ver "Rotas sem autenticação" e "Ambiente" acima), continuam pendentes antes de produção real.
+- **Healthcheck de desconexão do WhatsApp**: nós já estão no JSON do workflow, mas **ainda não reimportado no n8n** — falta reimportar, criar a credencial SMTP na UI (Gmail exige senha de app) e validar o ciclo completo (queda real ou simulada → e-mail chega → instância sobe → alerta reseta → nova queda → novo e-mail). Ver "Alerta de desconexão do WhatsApp" acima.
+
+Sugestões levantadas pelo Claude (ainda **não** pedidas pelo usuário — avaliar antes de implementar):
+
+- **Chave compartilhada n8n↔backend** e **migrations no lugar de `TYPEORM_SYNCHRONIZE`** — trade-offs de MVP já documentados (ver "Rotas sem autenticação" e "Ambiente" acima), continuam pendentes antes de produção real.
+- **Revisar outras pastas fora de `src/app`/`src/components`/`src/hooks`** (ex: se `lib/` ganhar algum dia um componente com `className`) contra o `content` do `tailwind.config.ts` — ver bug do toast invisível em "Notificações de mensagem" acima; o Tailwind não avisa em build quando uma pasta fica de fora do scan.
 
 ## O que evitar sugerir
 
