@@ -78,7 +78,15 @@ Além de aparecer no painel (ver frontend), o texto enviado à Evolution API lev
 - **Inativar** (`PATCH /users/:id/inactivate` → `UsersService.setAtivo(id, false)`): só `ativo = false`. Reversível via **Reativar** (`PATCH /users/:id/reactivate`). O usuário continua aparecendo no `GET /users`, só fica bloqueado de logar (reaproveita a checagem que já existia em `AuthService.login`). Uso esperado: férias, afastamento.
 - **Excluir** (`DELETE /users/:id` → `UsersService.remove`): `ativo = false` **e** `excluido_em = now()`. `UsersService.findAll` filtra `WHERE excluido_em IS NULL`, então o usuário some da lista — mas a linha continua no banco (não é um `DELETE` de verdade), porque `Message.atendente_id`/`Conversation.atendente_id` são FK pra `users` e apagar quebraria o histórico. **Não existe "desfazer" excluir pela UI.** Uso esperado: desligamento.
 
-`UsersController` ganhou `PATCH /users/:id` (editar nome/e-mail/senha/setor/papel, `UpdateUserDto` com todos os campos opcionais) além das duas rotas acima. Nenhuma rota nova tem guard de `role: admin` — mesmo trade-off de MVP já documentado (reforço só no frontend).
+`UsersController` ganhou `PATCH /users/:id` (editar nome/e-mail/senha/setor/papel, `UpdateUserDto` com todos os campos opcionais) além das duas rotas acima.
+
+### Guard de `role: admin` no backend (2026-07-29)
+
+Até aqui, `UsersController` só tinha `JwtAuthGuard` — qualquer atendente autenticado conseguia chamar `PATCH/DELETE /users/:id` direto via API, mesmo o frontend escondendo a tela `/usuarios` de quem não é admin. Corrigido com `RolesGuard` (`backend/src/auth/guards/roles.guard.ts`) + decorator `@Roles(...)` (`backend/src/auth/decorators/roles.decorator.ts`), padrão `Reflector` do NestJS — lê metadata setada por `@Roles` (handler ou controller) e compara com `req.user.role` (já vem no payload do JWT, ver `AuthService.login`). Lança `403 Forbidden` se não bater.
+
+Aplicado no controller inteiro: `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles(UserRole.ADMIN)` em `UsersController` — **todas** as rotas de `/users` (incluindo `GET`) agora exigem admin, não só as destrutivas, porque a tela `/usuarios` já era admin-only por inteiro no frontend. `RolesGuard` é genérico (lê `ROLES_KEY` via `getAllAndOverride`, então também aceita `@Roles` em handlers individuais de outros controllers) — reaproveitar em vez de duplicar essa checagem se outra rota admin-only surgir.
+
+**Continua pendente**: chave compartilhada n8n↔backend nas rotas públicas (`by-phone`, criar conversa/mensagem) — esse guard não mexe nelas, só em `/users`.
 
 ### Rotas sem autenticação (proposital, não é bug)
 
@@ -118,6 +126,8 @@ Cliente sem conversa ativa que manda várias mensagens separadas em sequência (
 
 **Escopo deliberadamente limitado**: só o ramo "sem conversa ativa". Mensagens de um cliente já em atendimento com um atendente humano continuam chegando uma a uma no painel — não tem debounce aí, e mensagens que o atendente manda pelo painel nem passam por esse workflow (vão direto backend → Evolution).
 
+**Testado com WhatsApp real (2026-07-29)**: mensagens fragmentadas foram agrupadas corretamente, sem repetir o menu de departamentos. 6s se mostrou um valor adequado — não precisou ajustar o node **Wait - Aguardar Fragmentos**.
+
 Usa o Redis do `docker-compose.yml` (banco `0`, padrão) — não conflita com o banco `1` que a Evolution API já usa pra cache (`CACHE_REDIS_URI: redis://redis:6379/1`). **Credencial Redis não vem no JSON exportado** (por segurança) — depois de reimportar o workflow, é preciso criar/selecionar uma credencial Redis na UI do n8n (host `redis`, porta `6379`, sem usuário/senha, banco `0`) nos 6 nós novos.
 
 ### Incidente: instância WhatsApp desconectada (2026-07-27)
@@ -128,6 +138,30 @@ Sintoma: mensagens reais do WhatsApp paravam de aparecer em **Executions** no n8
 3. `GET /instance/connectionState/atendimento-empresa` (Evolution API) → `"state":"close"`.
 
 Causa: a sessão do WhatsApp (dispositivo vinculado) foi removida do lado do celular/WhatsApp — não é bug do sistema. **Solução**: Manager da Evolution API (`http://localhost:8089/manager`) → localizar a instância → reconectar e escanear o QR Code de novo.
+
+### Alerta de desconexão do WhatsApp (2026-07-29)
+
+Depois do incidente acima ter sido percebido só porque o usuário notou que mensagens não chegavam, adicionado um healthcheck periódico no mesmo workflow do n8n — seção independente, com trigger próprio (`Schedule - Checar Conexão a Cada 5min`, não mexe no fluxo de mensagens existente):
+
+```
+Schedule (a cada 5min)
+  → GET /instance/connectionState/atendimento-empresa (Evolution API)
+  → Code - Normalizar Estado da Instância (trata erro de conexão como state "unreachable")
+  → IF state != "open"
+       sim → Redis: já alertou nos últimos 60min? (chave alerta_enviado:atendimento-empresa)
+              não → Enviar E-mail de Alerta (HTML) → Redis: marca alerta_enviado (TTL 3600s)
+              sim → não faz nada (evita spam a cada 5min enquanto seguir caída)
+       não → Redis: limpa alerta_enviado (reseta, pra alertar de novo numa próxima queda)
+```
+
+**Por que e-mail, não WhatsApp**: se a instância principal cair, ela não pode ser usada pra avisar sobre a própria queda (dependência circular). Decisão do usuário (2026-07-29): usar e-mail em vez de manter uma segunda instância Evolution só pra alertas.
+
+Detalhes de implementação:
+- Destino fixo `juandev33@gmail.com` (node `Enviar E-mail de Alerta`, `toEmail`) — diferente do e-mail da conta do usuário, foi pedido explicitamente assim.
+- Corpo em HTML com estilos inline (compatibilidade de cliente de e-mail), mostra estado reportado e horário (`America/Sao_Paulo`, mesmo padrão de timezone do resto do projeto — ver "Colunas de data/hora" acima) e um botão linkando pro Manager (`http://localhost:8089/manager`).
+- **Como toda credencial no n8n, a de SMTP não vem no JSON exportado.** Depois de reimportar o workflow é preciso criar uma credencial de e-mail (SMTP) na UI do n8n e selecioná-la no node `Enviar E-mail de Alerta` — mesmo trade-off já documentado pra credencial Redis. `fromEmail` está fixo em `juandev33@gmail.com` (2026-07-29, decisão do usuário) — **precisa bater com a conta autenticada na credencial SMTP** (Gmail rejeita `From` diferente da conta logada). Envia pra si mesma (remetente = destinatário), aceito pelo usuário. Se usar Gmail como SMTP, a credencial precisa de uma **senha de app** (`myaccount.google.com/apppasswords`, exige verificação em duas etapas ativada), não a senha normal da conta.
+- Reaproveita o mesmo Redis (banco `0`) já usado no debounce — precisa da mesma credencial Redis selecionada nos 2 nós novos (`Redis - Verificar Se Já Alertou`, `Redis - Marcar Alerta Enviado`, `Redis - Limpar Alerta (Instância OK)`).
+- **Não testado ainda** (nem via curl nem com a instância real caída) — falta reimportar o workflow atualizado no n8n, configurar a credencial SMTP e validar o ciclo completo (queda → e-mail → sobe → reset → nova queda → novo e-mail).
 
 ## Frontend — estrutura e convenções
 
@@ -201,7 +235,9 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 - [x] Mensagens do atendente levam assinatura "Nome - CÓDIGO" no WhatsApp do cliente (2026-07-24), testado via WhatsApp real e validado pelo usuário. Ver "Mensagens — assinatura do atendente" acima.
 - [x] Tela `/usuarios` (só admin): listar, criar, **editar, inativar/reativar e excluir (soft-delete)** usuários, com busca client-side e correção de `senha_hash` vazando na resposta da API. Ver "Gestão de usuários" e "Editar / inativar / excluir usuário" acima.
 - [x] `ConfirmModal` substituindo `window.confirm` em Finalizar conversa, Inativar e Excluir usuário (2026-07-27). Ver seção própria acima.
-- [x] Debounce de mensagens fragmentadas no n8n (via Redis), aplicado só no ramo sem conversa ativa (2026-07-27). Ver "Debounce de mensagens fragmentadas" acima. **Lógica implementada e validada via curl; falta reconectar a instância do WhatsApp (ver "Incidente" acima) e testar com mensagens fragmentadas reais.**
+- [x] Debounce de mensagens fragmentadas no n8n (via Redis), aplicado só no ramo sem conversa ativa (2026-07-27), **testado com WhatsApp real em 2026-07-29 e validado pelo usuário** — 6s funcionou bem, sem necessidade de ajuste. Ver "Debounce de mensagens fragmentadas" acima.
+- [x] Guard de `role: admin` em todas as rotas de `/users` no backend (2026-07-29), via `RolesGuard` + `@Roles`. Ver "Guard de `role: admin` no backend" acima.
+- [x] Healthcheck de conexão do WhatsApp no n8n (2026-07-29), a cada 5min, com alerta por e-mail (dedup via Redis, TTL 1h) quando a instância cai. Ver "Alerta de desconexão do WhatsApp" acima. **Nós adicionados no JSON, mas ainda não reimportado no n8n nem testado — falta configurar a credencial SMTP.**
 
 ## Ambiente de desenvolvimento
 
@@ -227,8 +263,6 @@ Itens da sessão de 2026-07-24 (editar/inativar/excluir/busca em `/usuarios`) **
 Sugestões levantadas pelo Claude em 2026-07-27 (ainda **não** pedidas pelo usuário — avaliar antes de implementar):
 
 - **Testar o debounce com WhatsApp real**: a lógica foi validada via `curl` direto no webhook, mas ainda não com mensagens fragmentadas reais — depende de reconectar a instância primeiro (ver "Incidente: instância WhatsApp desconectada"). Se 6s se mostrar curto/longo na prática, é só ajustar o node `Wait - Aguardar Fragmentos`.
-- **Guard de `role: admin` no backend**: hoje `UsersController` só tem `JwtAuthGuard`, sem checar papel — qualquer atendente autenticado pode chamar `PATCH/DELETE /users/:id` direto via API (o frontend esconde a tela, mas não protege a rota). Como agora existem ações destrutivas (excluir/inativar usuário), vale a pena antes de produção real.
-- **Alerta de desconexão do WhatsApp**: o incidente de hoje (instância caiu, `state: "close"`) só foi percebido porque o usuário notou que mensagens não chegavam. Um healthcheck simples (ex: schedule no n8n batendo em `GET /instance/connectionState/:instance` de tempos em tempos e avisando se `state !== "open"`) evitaria descobrir isso "no escuro".
 - **Chave compartilhada n8n↔backend** e **migrations no lugar de `TYPEORM_SYNCHRONIZE`** — já eram trade-offs de MVP documentados antes de hoje (ver "Rotas sem autenticação" e "Ambiente" acima), continuam pendentes antes de produção real.
 
 ## O que evitar sugerir

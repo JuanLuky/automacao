@@ -326,6 +326,152 @@
       "typeVersion": 4.2,
       "position": [3280, 660],
       "id": "node-send-menu"
+    },
+
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
+        }
+      },
+      "name": "Schedule - Checar Conexão a Cada 5min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 940],
+      "id": "node-healthcheck-schedule"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://evolution-api:8080/instance/connectionState/atendimento-empresa",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "apikey", "value": "COLOQUE_AQUI_A_EVOLUTION_API_KEY" }]
+        },
+        "options": {}
+      },
+      "name": "Verificar Estado da Instância",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
+      "position": [400, 940],
+      "id": "node-healthcheck-check-state"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza a resposta da Evolution API (ou a falta dela, se o container\n// estiver fora do ar) num formato único pro resto do healthcheck.\n// Confirmado em 2026-07-27 (ver \"Incidente\" no CLAUDE.md) que a resposta\n// de sucesso tem o formato { instance: { state: 'open' | 'close' | ... } }.\nconst body = $input.item.json;\nconst isError = body?.error !== undefined;\nconst state = isError ? 'unreachable' : (body?.instance?.state || body?.state || 'unknown');\n\nreturn [\n  {\n    json: {\n      instance: 'atendimento-empresa',\n      state,\n    },\n  },\n];\n"
+      },
+      "name": "Code - Normalizar Estado da Instância",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [620, 940],
+      "id": "node-healthcheck-normalize"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-instancia-desconectada",
+              "leftValue": "={{ $json.state }}",
+              "rightValue": "open",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "IF - Instância Desconectada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [840, 940],
+      "id": "node-healthcheck-if-disconnected"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "alerta_enviado:atendimento-empresa"
+      },
+      "name": "Redis - Limpar Alerta (Instância OK)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1060, 1080],
+      "id": "node-healthcheck-redis-clear-alert"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "alertaJaEnviado",
+        "key": "alerta_enviado:atendimento-empresa",
+        "options": {}
+      },
+      "name": "Redis - Verificar Se Já Alertou",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1060, 820],
+      "id": "node-healthcheck-redis-get-alert"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-ja-alertou",
+              "leftValue": "={{ $json.alertaJaEnviado }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "IF - Já Alertou Recentemente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1280, 820],
+      "id": "node-healthcheck-if-already-alerted"
+    },
+    {
+      "parameters": {
+        "fromEmail": "juandev33@gmail.com",
+        "toEmail": "juandev33@gmail.com",
+        "subject": "=🌊 Maré — WhatsApp desconectado ({{ $('Code - Normalizar Estado da Instância').item.json.instance }})",
+        "emailType": "html",
+        "html": "=<!DOCTYPE html><html><body style='margin:0;padding:0;background-color:#f4f4f5;font-family:Arial,Helvetica,sans-serif;'><table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background-color:#f4f4f5;padding:32px 0;'><tr><td align='center'><table role='presentation' width='480' cellpadding='0' cellspacing='0' style='background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);'><tr><td style='background-color:#DC2626;padding:24px 32px;'><span style='font-size:22px;'>⚠️</span><span style='color:#ffffff;font-size:18px;font-weight:bold;margin-left:8px;'>WhatsApp desconectado</span></td></tr><tr><td style='padding:32px;'><p style='margin:0 0 16px;color:#18181B;font-size:15px;line-height:1.5;'>A instância <strong>{{ $('Code - Normalizar Estado da Instância').item.json.instance }}</strong> do Maré parou de responder mensagens. Clientes que escreverem agora não vão receber o menu de departamentos.</p><table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background-color:#FAFAFA;border-radius:8px;margin:0 0 24px;'><tr><td style='padding:16px 20px;'><p style='margin:0 0 4px;color:#71717A;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;'>Estado reportado</p><p style='margin:0 0 12px;color:#18181B;font-size:14px;font-family:monospace;'>{{ $('Code - Normalizar Estado da Instância').item.json.state }}</p><p style='margin:0 0 4px;color:#71717A;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;'>Verificado em</p><p style='margin:0;color:#18181B;font-size:14px;'>{{ $now.setZone('America/Sao_Paulo').toFormat(\"dd/MM/yyyy 'às' HH:mm:ss\") }}</p></td></tr></table><a href='http://localhost:8089/manager' style='display:inline-block;background-color:#14B8A6;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:bold;'>Abrir Manager e reconectar</a><p style='margin:24px 0 0;color:#A1A1AA;font-size:12px;line-height:1.5;'>Localize a instância no Manager e escaneie o QR Code novamente. Você não vai receber outro alerta enquanto essa desconexão continuar — o próximo aviso só sai depois que a instância voltar e cair de novo.</p></td></tr></table></td></tr></table></body></html>",
+        "options": {}
+      },
+      "name": "Enviar E-mail de Alerta",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1500, 720],
+      "id": "node-healthcheck-send-email"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "alerta_enviado:atendimento-empresa",
+        "value": "1",
+        "expire": true,
+        "ttl": 3600,
+        "options": {}
+      },
+      "name": "Redis - Marcar Alerta Enviado",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1720, 720],
+      "id": "node-healthcheck-redis-set-alert"
     }
   ],
   "connections": {
@@ -396,6 +542,37 @@
     },
     "Montar Confirmação": {
       "main": [[{ "node": "Enviar Confirmação de Setor", "type": "main", "index": 0 }]]
+    },
+
+    "Schedule - Checar Conexão a Cada 5min": {
+      "main": [[{ "node": "Verificar Estado da Instância", "type": "main", "index": 0 }]]
+    },
+    "Verificar Estado da Instância": {
+      "main": [
+        [{ "node": "Code - Normalizar Estado da Instância", "type": "main", "index": 0 }],
+        [{ "node": "Code - Normalizar Estado da Instância", "type": "main", "index": 0 }]
+      ]
+    },
+    "Code - Normalizar Estado da Instância": {
+      "main": [[{ "node": "IF - Instância Desconectada?", "type": "main", "index": 0 }]]
+    },
+    "IF - Instância Desconectada?": {
+      "main": [
+        [{ "node": "Redis - Verificar Se Já Alertou", "type": "main", "index": 0 }],
+        [{ "node": "Redis - Limpar Alerta (Instância OK)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Redis - Verificar Se Já Alertou": {
+      "main": [[{ "node": "IF - Já Alertou Recentemente?", "type": "main", "index": 0 }]]
+    },
+    "IF - Já Alertou Recentemente?": {
+      "main": [
+        [],
+        [{ "node": "Enviar E-mail de Alerta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Enviar E-mail de Alerta": {
+      "main": [[{ "node": "Redis - Marcar Alerta Enviado", "type": "main", "index": 0 }]]
     }
   },
   "active": false,
