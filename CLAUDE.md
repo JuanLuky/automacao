@@ -161,7 +161,10 @@ Detalhes de implementação:
 - Corpo em HTML com estilos inline (compatibilidade de cliente de e-mail), mostra estado reportado e horário (`America/Sao_Paulo`, mesmo padrão de timezone do resto do projeto — ver "Colunas de data/hora" acima) e um botão linkando pro Manager (`http://localhost:8089/manager`).
 - **Como toda credencial no n8n, a de SMTP não vem no JSON exportado.** Depois de reimportar o workflow é preciso criar uma credencial de e-mail (SMTP) na UI do n8n e selecioná-la no node `Enviar E-mail de Alerta` — mesmo trade-off já documentado pra credencial Redis. `fromEmail` está fixo em `juandev33@gmail.com` (2026-07-29, decisão do usuário) — **precisa bater com a conta autenticada na credencial SMTP** (Gmail rejeita `From` diferente da conta logada). Envia pra si mesma (remetente = destinatário), aceito pelo usuário. Se usar Gmail como SMTP, a credencial precisa de uma **senha de app** (`myaccount.google.com/apppasswords`, exige verificação em duas etapas ativada), não a senha normal da conta.
 - Reaproveita o mesmo Redis (banco `0`) já usado no debounce — precisa da mesma credencial Redis selecionada nos 2 nós novos (`Redis - Verificar Se Já Alertou`, `Redis - Marcar Alerta Enviado`, `Redis - Limpar Alerta (Instância OK)`).
-- **Não testado ainda** (nem via curl nem com a instância real caída) — falta reimportar o workflow atualizado no n8n, configurar a credencial SMTP e validar o ciclo completo (queda → e-mail → sobe → reset → nova queda → novo e-mail).
+
+**Testado com instância real (2026-07-30), validado pelo usuário**: workflow reimportado, credencial SMTP (Gmail, senha de app) e credenciais Redis configuradas na UI do n8n, e-mail chegou corretamente na primeira queda.
+
+**Comportamento não óbvio descoberto no teste — o reset do dedup depende de um tick do Schedule, não do evento de reconexão**: a chave `alerta_enviado:atendimento-empresa` (TTL 3600s) só é apagada quando o **Schedule roda e encontra a instância com `state == "open"`** (nó `Redis - Limpar Alerta (Instância OK)`) — não no instante em que a instância reconecta. Em teste manual (cair → alertar → reconectar → derrubar de novo em menos de 5min), nenhum tick do Schedule chegou a rodar com a instância saudável no meio, então o `DELETE` nunca aconteceu e a segunda queda caiu em `IF - Já Alertou Recentemente?` como "sim", pulando o e-mail. Numa queda real isso não deve incomodar (costuma durar bem mais que 5min), mas explica por que testes rápidos de queda/reconexão/queda não geram um segundo e-mail — não é bug, é esperar um tick de 5min com a instância `"open"` no meio, ou os 3600s de TTL expirarem. **Decisão do usuário (2026-07-30): manter como está**, sem reduzir o intervalo do Schedule nem adicionar um segundo gatilho de reset — o caso de borda só aparece em teste manual rápido, não em quedas reais.
 
 ## Frontend — estrutura e convenções
 
@@ -175,7 +178,8 @@ frontend/src/
 │       ├── fila/                # lista por setor, abas aguardando/em_atendimento, botão Assumir
 │       ├── conversas/[id]/       # chat: histórico, envio, Transferir, Finalizar
 │       ├── dashboard/           # contadores por status (+ breakdown por setor pro admin)
-│       └── usuarios/            # só admin — listar/criar/editar/inativar/excluir atendentes/admins (ver seção própria abaixo)
+│       ├── usuarios/            # só admin — listar/criar/editar/inativar/excluir atendentes/admins (ver seção própria abaixo)
+│       └── whatsapp/            # só admin — QR Code de conexão da instância (ver seção própria abaixo)
 ├── components/
 │   ├── LiveQueuePanel.tsx     # amostra ilustrativa na tela de login (dados locais, não é a fila real)
 │   └── ui/                    # Button, Field, Select, StatusBadge, ConfirmModal
@@ -221,6 +225,15 @@ Primeiro teste real: o badge aparecia, mas o toast não — em nenhuma rota. Cau
 
 **Corrigido** adicionando `"./src/hooks/**/*.{js,ts,jsx,tsx,mdx}"` ao `content` de `tailwind.config.ts`. **Vale lembrar disso pra qualquer pasta nova que passe a ter JSX/`className`** (ex: se `lib/` ou `types/` um dia ganhar um componente) — o Tailwind não avisa em build, ele só silenciosamente não gera a classe.
 
+### Conexão do WhatsApp via QR Code no painel — `/whatsapp` (2026-07-30)
+
+Item de nav "WhatsApp" ao lado de "Usuários" em `NAV_ADMIN` (`layout.tsx`), só admin — mesmo reforço client-side já documentado em "Gestão de usuários" (redireciona pra `/fila` se não-admin). Objetivo: evitar que o admin precise abrir o Manager da Evolution API (`localhost:8089/manager`) separadamente pra reconectar o número depois de uma queda.
+
+- **Backend**: novo módulo `backend/src/whatsapp/` (`WhatsappController`, sem `WhatsappService` — é um passthrough fino pro adapter, não tem regra de domínio própria, então não fez sentido criar uma camada de Service só por consistência). Duas rotas, ambas `GET`, guardadas com `JwtAuthGuard` + `RolesGuard` + `@Roles(admin)` (mesmo padrão do `UsersController`): `/whatsapp/status?instance=` (proxy pra `GET /instance/connectionState/:instance` da Evolution) e `/whatsapp/qrcode?instance=` (proxy pra `GET /instance/connect/:instance`, que gera um QR novo). `EvolutionService` ganhou `getConnectionState`/`getQrCode` — devolvem o JSON cru da Evolution API (`Record<string, unknown>`) sem normalizar, porque o formato do payload varia entre versões da Evolution API; quem normaliza (`state ?? instance?.state`) é o frontend.
+- **`instance` vem por query param, não fixo no backend** — segue o mesmo padrão já usado em `POST /conversations/:id/messages` (campo `instance` no DTO), onde quem sabe o nome da instância é o frontend (`NEXT_PUBLIC_EVOLUTION_INSTANCE`), não uma env var do backend.
+- **Frontend**: `frontend/src/app/(painel)/whatsapp/page.tsx` — busca status a cada 8s (`POLL_INTERVAL_MS`); se não `"open"`, busca um QR Code novo (`getWhatsappQrCode`) e mostra a imagem base64 recebida direto (`<img>`, não `next/image` — é uma data URI gerada dinamicamente pela Evolution, não tem o que otimizar). Botão manual "Gerar novo QR Code"/"Tentar novamente" força um novo ciclo fora do intervalo. Quando `state === "open"`, mostra card de "conectado" e para de buscar QR.
+**Testado escaneando um QR real e validado pelo usuário (2026-07-30)** — schema de resposta da Evolution API (`base64`/`state`) bateu com o esperado pelo parsing defensivo do frontend, sem ajuste necessário.
+
 ### `ConfirmModal` — substituiu `window.confirm` (2026-07-27)
 
 `components/ui/ConfirmModal.tsx`: modal de confirmação renderizado via `createPortal` em `document.body`, com Escape/clique no backdrop pra cancelar, prop `loading` (spinner no botão de confirmar enquanto a ação assíncrona roda) e `variant="danger"` (vermelho, ícone de alerta) pra ações destrutivas. Motivo: `window.confirm` tem aparência de navegador, destoando da identidade visual do painel.
@@ -256,8 +269,9 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 - [x] `ConfirmModal` substituindo `window.confirm` em Finalizar conversa, Inativar e Excluir usuário (2026-07-27). Ver seção própria acima.
 - [x] Debounce de mensagens fragmentadas no n8n (via Redis), aplicado só no ramo sem conversa ativa (2026-07-27), **testado com WhatsApp real em 2026-07-29 e validado pelo usuário** — 6s funcionou bem, sem necessidade de ajuste. Ver "Debounce de mensagens fragmentadas" acima.
 - [x] Guard de `role: admin` em todas as rotas de `/users` no backend (2026-07-29), via `RolesGuard` + `@Roles`. Ver "Guard de `role: admin` no backend" acima.
-- [x] Healthcheck de conexão do WhatsApp no n8n (2026-07-29), a cada 5min, com alerta por e-mail (dedup via Redis, TTL 1h) quando a instância cai. Ver "Alerta de desconexão do WhatsApp" acima. **Nós adicionados no JSON, mas ainda não reimportado no n8n nem testado — falta configurar a credencial SMTP.**
+- [x] Healthcheck de conexão do WhatsApp no n8n (2026-07-29), a cada 5min, com alerta por e-mail (dedup via Redis, TTL 1h) quando a instância cai. Workflow reimportado, credenciais SMTP e Redis configuradas, **testado com instância real e validado pelo usuário em 2026-07-30**. Ver "Alerta de desconexão do WhatsApp" acima, incluindo o comportamento do reset do dedup (depende de um tick do Schedule com a instância saudável, não do evento de reconexão em si).
 - [x] Badge de mensagens não lidas na fila + toast de notificação no canto da tela (2026-07-29), pra avisar quando um cliente de uma conversa já assumida manda mensagem enquanto o atendente está em outra tela/conversa. **Testado com WhatsApp real e validado pelo usuário** — ver "Notificações de mensagem" acima, incluindo o bug do content glob do Tailwind (`src/hooks/` fora do scan) que fazia o toast ficar invisível na primeira rodada de teste.
+- [x] Tela `/whatsapp` (só admin): conectar a instância via QR Code direto no painel, sem abrir o Manager da Evolution API. **Testado escaneando um QR real e validado pelo usuário em 2026-07-30**. Ver "Conexão do WhatsApp via QR Code no painel" acima.
 
 ## Ambiente de desenvolvimento
 
@@ -278,11 +292,7 @@ Depois desses ajustes: os 5 containers sobem saudáveis, `npm run seed` cria os 
 
 ## Próximos passos
 
-Itens das sessões de 2026-07-24/27 (editar/inativar/excluir/busca em `/usuarios`, debounce de fragmentos testado com WhatsApp real) **já concluídos** — ver "Status atual do projeto" acima.
-
-Pendências concretas (itens já implementados nesta sessão de 2026-07-29, faltando só validação/config final):
-
-- **Healthcheck de desconexão do WhatsApp**: nós já estão no JSON do workflow, mas **ainda não reimportado no n8n** — falta reimportar, criar a credencial SMTP na UI (Gmail exige senha de app) e validar o ciclo completo (queda real ou simulada → e-mail chega → instância sobe → alerta reseta → nova queda → novo e-mail). Ver "Alerta de desconexão do WhatsApp" acima.
+Itens das sessões de 2026-07-24/27/29 (editar/inativar/excluir/busca em `/usuarios`, debounce de fragmentos testado com WhatsApp real, healthcheck de desconexão com alerta por e-mail) **já concluídos** — ver "Status atual do projeto" acima.
 
 Sugestões levantadas pelo Claude (ainda **não** pedidas pelo usuário — avaliar antes de implementar):
 

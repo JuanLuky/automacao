@@ -93,3 +93,21 @@ export interface ApiError {
   message: string;
   statusCode?: number;
 }
+
+/**
+ * Passthrough do payload cru da Evolution API (GET /instance/connectionState)
+ * — o formato varia entre versões, por isso os campos são todos opcionais.
+ */
+export interface WhatsappStatus {
+  state?: string;
+  instance?: { instanceName?: string; state?: string };
+}
+
+/** Passthrough do payload cru da Evolution API (GET /instance/connect). */
+export interface WhatsappQrCode {
+  base64?: string;
+  pairingCode?: string;
+  code?: string;
+  state?: string;
+  instance?: { instanceName?: string; state?: string };
+}

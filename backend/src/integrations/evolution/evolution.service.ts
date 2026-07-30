@@ -35,4 +35,41 @@ export class EvolutionService {
       );
     }
   }
+
+  async getConnectionState(instance: string): Promise<Record<string, unknown>> {
+    const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+    const response = await fetch(
+      `${baseUrl}/instance/connectionState/${instance}`,
+      { headers: { apikey: apiKey ?? '' } },
+    );
+
+    if (!response.ok) {
+      const corpo = await response.text();
+      throw new Error(
+        `Falha ao consultar estado da instância na Evolution API (${response.status}): ${corpo}`,
+      );
+    }
+
+    return response.json();
+  }
+
+  async getQrCode(instance: string): Promise<Record<string, unknown>> {
+    const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+    const response = await fetch(`${baseUrl}/instance/connect/${instance}`, {
+      headers: { apikey: apiKey ?? '' },
+    });
+
+    if (!response.ok) {
+      const corpo = await response.text();
+      throw new Error(
+        `Falha ao gerar QR Code na Evolution API (${response.status}): ${corpo}`,
+      );
+    }
+
+    return response.json();
+  }
 }

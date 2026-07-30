@@ -8,6 +8,7 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { MessagesModule } from './messages/messages.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { EvolutionModule } from './integrations/evolution/evolution.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { User } from './users/entities/user.entity';
 import { Department } from './departments/entities/department.entity';
 import { Conversation } from './conversations/entities/conversation.entity';
@@ -34,6 +35,7 @@ import { Message } from './messages/entities/message.entity';
     MessagesModule,
     WebsocketModule,
     EvolutionModule,
+    WhatsappModule,
   ],
 })
 export class AppModule {}

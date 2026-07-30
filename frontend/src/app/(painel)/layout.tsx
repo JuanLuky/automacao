@@ -9,6 +9,7 @@ import {
   Loader2,
   LogOut,
   Moon,
+  QrCode,
   Sun,
   UserPlus,
   Waves,
@@ -25,6 +26,7 @@ const NAV = [
 
 const NAV_ADMIN = [
   { href: "/usuarios", label: "Usuários", icon: UserPlus },
+  { href: "/whatsapp", label: "WhatsApp", icon: QrCode },
 ];
 
 export default function PainelLayout({

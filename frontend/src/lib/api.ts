@@ -12,6 +12,8 @@ import type {
   TransferPayload,
   UpdateUserPayload,
   User,
+  WhatsappQrCode,
+  WhatsappStatus,
 } from "@/types";
 
 export const API_URL =
@@ -197,4 +199,18 @@ export async function reactivateUser(id: string): Promise<User> {
 
 export async function deleteUser(id: string): Promise<void> {
   await api.delete(`/users/${id}`);
+}
+
+export async function getWhatsappStatus(instance: string): Promise<WhatsappStatus> {
+  const { data } = await api.get<WhatsappStatus>("/whatsapp/status", {
+    params: { instance },
+  });
+  return data;
+}
+
+export async function getWhatsappQrCode(instance: string): Promise<WhatsappQrCode> {
+  const { data } = await api.get<WhatsappQrCode>("/whatsapp/qrcode", {
+    params: { instance },
+  });
+  return data;
 }
