@@ -94,8 +94,19 @@ Aplicado no controller inteiro: `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles
 
 ### Ambiente
 
-- `TYPEORM_SYNCHRONIZE=true` em desenvolvimento (cria tabelas automaticamente). **Trocar para migrations antes de produção.**
-- Rodar `npm run seed` depois do primeiro start — cria os 5 departamentos (`codigo`: RH, FIN, CONT, TI, COM) e o usuário `admin@empresa.com` / `admin123` (senha a trocar).
+- Schema do banco controlado por **migrations** (`backend/src/database/migrations/`), não por `synchronize` — ver seção própria abaixo.
+- Rodar `npm run migration:run` antes do primeiro start num ambiente novo (cria as 4 tabelas), depois `npm run seed` — cria os 5 departamentos (`codigo`: RH, FIN, CONT, TI, COM) e o usuário `admin@empresa.com` / `admin123` (senha a trocar).
+
+### Migrations (2026-07-30 — substituiu `TYPEORM_SYNCHRONIZE`)
+
+`app.module.ts` tem `synchronize: false` fixo (não é mais controlado por env var — `TYPEORM_SYNCHRONIZE` foi removido do `.env`, não tem mais leitor nenhum). O schema agora é 100% controlado por migrations do TypeORM:
+
+- `backend/src/database/data-source.ts`: `DataSource` usado só pela CLI do TypeORM (`npm run typeorm -- <comando>`), lê `DATABASE_URL` do `.env` via `dotenv`, aponta pra `src/database/migrations/*.ts`.
+- Scripts em `package.json`: `migration:generate <caminho>` (gera migration por diff entre entidades e o banco apontado em `DATABASE_URL`), `migration:run` (aplica as pendentes) e `migration:revert` (desfaz a última).
+- **`InitialSchema1785436093710`** (`src/database/migrations/1785436093710-InitialSchema.ts`) é a migration baseline — criada rodando `migration:generate` contra um banco **vazio temporário** (não contra o `atendimento_db` de desenvolvimento, que já tinha as tabelas criadas pelo antigo `synchronize: true` — gerar direto nele teria produzido uma migration vazia, sem diff). Testada de ponta a ponta nesse banco temporário (`run` → `revert` → `run` de novo, tudo limpo) antes de mexer no banco real.
+- **`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` foi adicionado manualmente** no topo do `up()` dessa migration — o `migration:generate` não inclui isso sozinho, mas as PKs (`uuid_generate_v4()` como `DEFAULT`) dependem dela. Sem essa linha, a migration falha num banco novo do zero (o `atendimento_db` atual já tinha a extensão habilitada, criada silenciosamente pelo `synchronize` antigo — por isso o gap só apareceria numa instalação nova).
+- **O `atendimento_db` de desenvolvimento não rodou o `up()` dessa migration** — como as 4 tabelas já existiam (criadas pelo `synchronize` antigo, com o schema idêntico ao gerado), rodar a migration ali quebraria com "relation already exists". Em vez disso, foi feito um **baseline adoption**: criada a tabela `migrations` (schema padrão do TypeORM) e inserida manualmente a linha correspondente a essa migration, sem executar o SQL — confirmado depois com `npm run migration:run` reportando `No migrations are pending`. **Nenhum dado existente foi tocado.**
+- **Daqui pra frente**: qualquer mudança em entidade precisa de uma migration nova (`npm run migration:generate -- src/database/migrations/NomeDaMudanca`, com o banco de dev já refletindo o estado *anterior* à mudança) — não existe mais auto-sync. Revisar sempre o SQL gerado antes de rodar `migration:run` (o TypeORM erra esporadicamente em nomes de constraint ou em diffs mais complexos de enum).
 
 ## n8n — fluxo atual
 
@@ -272,6 +283,7 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 - [x] Healthcheck de conexão do WhatsApp no n8n (2026-07-29), a cada 5min, com alerta por e-mail (dedup via Redis, TTL 1h) quando a instância cai. Workflow reimportado, credenciais SMTP e Redis configuradas, **testado com instância real e validado pelo usuário em 2026-07-30**. Ver "Alerta de desconexão do WhatsApp" acima, incluindo o comportamento do reset do dedup (depende de um tick do Schedule com a instância saudável, não do evento de reconexão em si).
 - [x] Badge de mensagens não lidas na fila + toast de notificação no canto da tela (2026-07-29), pra avisar quando um cliente de uma conversa já assumida manda mensagem enquanto o atendente está em outra tela/conversa. **Testado com WhatsApp real e validado pelo usuário** — ver "Notificações de mensagem" acima, incluindo o bug do content glob do Tailwind (`src/hooks/` fora do scan) que fazia o toast ficar invisível na primeira rodada de teste.
 - [x] Tela `/whatsapp` (só admin): conectar a instância via QR Code direto no painel, sem abrir o Manager da Evolution API. **Testado escaneando um QR real e validado pelo usuário em 2026-07-30**. Ver "Conexão do WhatsApp via QR Code no painel" acima.
+- [x] Migrations do TypeORM substituindo `TYPEORM_SYNCHRONIZE` (2026-07-30) — `synchronize: false` fixo, migration baseline gerada e testada (run/revert/run) num banco temporário, adotada no `atendimento_db` de dev via bookkeeping (sem tocar dado nenhum). Ver "Migrations" acima.
 
 ## Ambiente de desenvolvimento
 
@@ -292,11 +304,11 @@ Depois desses ajustes: os 5 containers sobem saudáveis, `npm run seed` cria os 
 
 ## Próximos passos
 
-Itens das sessões de 2026-07-24/27/29 (editar/inativar/excluir/busca em `/usuarios`, debounce de fragmentos testado com WhatsApp real, healthcheck de desconexão com alerta por e-mail) **já concluídos** — ver "Status atual do projeto" acima.
+Itens das sessões de 2026-07-24/27/29/30 (editar/inativar/excluir/busca em `/usuarios`, debounce de fragmentos testado com WhatsApp real, healthcheck de desconexão com alerta por e-mail, tela de QR Code do WhatsApp, migrations substituindo `TYPEORM_SYNCHRONIZE`) **já concluídos** — ver "Status atual do projeto" acima.
 
 Sugestões levantadas pelo Claude (ainda **não** pedidas pelo usuário — avaliar antes de implementar):
 
-- **Chave compartilhada n8n↔backend** e **migrations no lugar de `TYPEORM_SYNCHRONIZE`** — trade-offs de MVP já documentados (ver "Rotas sem autenticação" e "Ambiente" acima), continuam pendentes antes de produção real.
+- **Chave compartilhada n8n↔backend** — trade-off de MVP já documentado (ver "Rotas sem autenticação" acima), continua pendente antes de produção real. Decisão do usuário em 2026-07-30: manter assim por enquanto, corrigir só perto de produção.
 - **Revisar outras pastas fora de `src/app`/`src/components`/`src/hooks`** (ex: se `lib/` ganhar algum dia um componente com `className`) contra o `content` do `tailwind.config.ts` — ver bug do toast invisível em "Notificações de mensagem" acima; o Tailwind não avisa em build quando uma pasta fica de fora do scan.
 
 ## O que evitar sugerir

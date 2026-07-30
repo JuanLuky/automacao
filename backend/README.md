@@ -21,11 +21,11 @@ Abra o `.env` e ajuste:
 
 ## Criando o banco (schema) e os dados iniciais
 
-Em desenvolvimento, deixamos `TYPEORM_SYNCHRONIZE=true` no `.env` — isso cria as tabelas automaticamente a partir das entities assim que a aplicação sobe pela primeira vez. **Não use isso em produção** (lá, gere migrations com `npm run migration:generate` e rode com `npm run migration:run`).
+O schema é criado por migrations do TypeORM (`src/database/migrations/`), não por `synchronize` (fica sempre `false` em `app.module.ts`).
 
-1. Suba a aplicação uma vez pra criar as tabelas:
+1. Rode as migrations pra criar as tabelas:
    ```bash
-   npm run start:dev
+   npm run migration:run
    ```
 2. Em outro terminal, rode o seed (cria os 5 departamentos e um usuário admin):
    ```bash

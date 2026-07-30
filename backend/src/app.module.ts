@@ -24,8 +24,9 @@ import { Message } from './messages/entities/message.entity';
         type: 'postgres',
         url: configService.get<string>('DATABASE_URL'),
         entities: [User, Department, Conversation, Message],
-        // Só em desenvolvimento. Em produção, use migrations (npm run migration:run).
-        synchronize: configService.get<string>('TYPEORM_SYNCHRONIZE') === 'true',
+        // Schema controlado por migrations (npm run migration:run), não pelo runtime da app.
+        // Ver src/database/migrations/ e src/database/data-source.ts.
+        synchronize: false,
       }),
     }),
     AuthModule,
