@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  Building2,
   LayoutDashboard,
   ListChecks,
   Loader2,
@@ -26,6 +27,7 @@ const NAV = [
 
 const NAV_ADMIN = [
   { href: "/usuarios", label: "Usuários", icon: UserPlus },
+  { href: "/departamentos", label: "Setores", icon: Building2 },
   { href: "/whatsapp", label: "WhatsApp", icon: QrCode },
 ];
 

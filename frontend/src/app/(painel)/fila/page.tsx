@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Inbox, Loader2, Phone, User as UserIcon } from "lucide-react";
+import { AlertCircle, Inbox, Loader2, Phone, Search, User as UserIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -17,6 +17,7 @@ import type { Conversation, ConversationStatus } from "@/types";
 const TABS: { status: ConversationStatus; label: string }[] = [
   { status: "aguardando", label: "Na fila" },
   { status: "em_atendimento", label: "Em atendimento" },
+  { status: "finalizado", label: "Finalizadas" },
 ];
 
 export default function FilaPage() {
@@ -33,8 +34,21 @@ export default function FilaPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [assumindoId, setAssumindoId] = useState<string | null>(null);
 
+  // Busca só faz sentido na aba "Finalizadas" — nas outras a lista já é
+  // pequena o bastante pra não precisar filtrar.
+  const [busca, setBusca] = useState("");
+  const [buscaDebounced, setBuscaDebounced] = useState("");
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setBuscaDebounced(busca.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [busca]);
+
   const semSetor = !isAdmin && !user?.departamento_id;
   const filtroDepartamento = isAdmin ? departamentoId || undefined : user?.departamento_id;
+  const isFinalizadas = tab === "finalizado";
 
   const carregar = useCallback(async () => {
     if (semSetor) {
@@ -45,14 +59,24 @@ export default function FilaPage() {
     setIsLoading(true);
     setErro(null);
     try {
-      const data = await getConversations({ status: tab, departamento_id: filtroDepartamento });
+      const data = await getConversations({
+        status: tab,
+        departamento_id: filtroDepartamento,
+        ...(isFinalizadas
+          ? {
+              busca: buscaDebounced || undefined,
+              data_inicio: dataInicio || undefined,
+              data_fim: dataFim || undefined,
+            }
+          : {}),
+      });
       setConversas(data);
     } catch (error) {
       setErro(normalizeError(error).message);
     } finally {
       setIsLoading(false);
     }
-  }, [tab, filtroDepartamento, semSetor]);
+  }, [tab, filtroDepartamento, semSetor, isFinalizadas, buscaDebounced, dataInicio, dataFim]);
 
   useEffect(() => {
     carregar();
@@ -122,6 +146,48 @@ export default function FilaPage() {
         ))}
       </div>
 
+      {isFinalizadas && (
+        <div className="mb-6 flex flex-wrap items-end gap-3">
+          <div className="relative min-w-[220px] flex-1">
+            <label className="mb-2 block text-eyebrow font-semibold uppercase text-muted">
+              Cliente
+            </label>
+            <div className="relative">
+              <Search
+                size={16}
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Nome ou telefone..."
+                className="w-full rounded-xl border border-app bg-sunken py-2.5 pl-10 pr-4 text-[0.875rem] text-primary placeholder:text-muted/60 focus:border-tide-500 focus:bg-raised focus:outline-none focus:ring-4 focus:ring-tide-500/12"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-2 block text-eyebrow font-semibold uppercase text-muted">De</label>
+            <input
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+              className="rounded-xl border border-app bg-sunken px-3.5 py-2.5 text-[0.875rem] text-primary focus:border-tide-500 focus:bg-raised focus:outline-none focus:ring-4 focus:ring-tide-500/12"
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-eyebrow font-semibold uppercase text-muted">Até</label>
+            <input
+              type="date"
+              value={dataFim}
+              onChange={(e) => setDataFim(e.target.value)}
+              className="rounded-xl border border-app bg-sunken px-3.5 py-2.5 text-[0.875rem] text-primary focus:border-tide-500 focus:bg-raised focus:outline-none focus:ring-4 focus:ring-tide-500/12"
+            />
+          </div>
+        </div>
+      )}
+
       {semSetor && (
         <div className="flex items-start gap-2.5 rounded-xl border border-alert/35 bg-alert/8 px-4 py-3">
           <AlertCircle size={17} className="mt-px shrink-0 text-alert" aria-hidden="true" />
@@ -146,7 +212,11 @@ export default function FilaPage() {
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-app py-16 text-center">
           <Inbox size={22} className="text-muted" />
           <p className="text-[0.875rem] text-secondary">
-            {tab === "aguardando" ? "Nenhuma conversa esperando." : "Nenhuma conversa em atendimento."}
+            {tab === "aguardando"
+              ? "Nenhuma conversa esperando."
+              : tab === "em_atendimento"
+                ? "Nenhuma conversa em atendimento."
+                : "Nenhuma conversa finalizada encontrada."}
           </p>
         </div>
       ) : (

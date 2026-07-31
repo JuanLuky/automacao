@@ -12,6 +12,7 @@ export interface Department {
   id: string;
   nome: string;
   codigo: string;
+  ativo: boolean;
 }
 
 export interface User {
@@ -49,6 +50,16 @@ export interface Conversation {
   atendente?: User;
   criado_em: string;
   finalizado_em: string | null;
+}
+
+export interface CreateDepartmentPayload {
+  nome: string;
+  codigo: string;
+}
+
+export interface UpdateDepartmentPayload {
+  nome?: string;
+  codigo?: string;
 }
 
 export interface CreateUserPayload {

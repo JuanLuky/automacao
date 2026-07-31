@@ -3,6 +3,7 @@ import type {
   ApiError,
   Conversation,
   ConversationStatus,
+  CreateDepartmentPayload,
   CreateUserPayload,
   Department,
   LoginPayload,
@@ -10,6 +11,7 @@ import type {
   Message,
   SendMessagePayload,
   TransferPayload,
+  UpdateDepartmentPayload,
   UpdateUserPayload,
   User,
   WhatsappQrCode,
@@ -114,9 +116,43 @@ export async function getDepartments(): Promise<Department[]> {
   return data;
 }
 
+/** Inclui setores inativos — só pra tela de administração (/departamentos). */
+export async function getDepartmentsAdmin(): Promise<Department[]> {
+  const { data } = await api.get<Department[]>("/departments/all");
+  return data;
+}
+
+export async function createDepartment(
+  payload: CreateDepartmentPayload,
+): Promise<Department> {
+  const { data } = await api.post<Department>("/departments", payload);
+  return data;
+}
+
+export async function updateDepartment(
+  id: string,
+  payload: UpdateDepartmentPayload,
+): Promise<Department> {
+  const { data } = await api.patch<Department>(`/departments/${id}`, payload);
+  return data;
+}
+
+export async function inactivateDepartment(id: string): Promise<Department> {
+  const { data } = await api.patch<Department>(`/departments/${id}/inactivate`);
+  return data;
+}
+
+export async function reactivateDepartment(id: string): Promise<Department> {
+  const { data } = await api.patch<Department>(`/departments/${id}/reactivate`);
+  return data;
+}
+
 export async function getConversations(filtros: {
   status?: ConversationStatus;
   departamento_id?: string;
+  busca?: string;
+  data_inicio?: string;
+  data_fim?: string;
 }): Promise<Conversation[]> {
   const { data } = await api.get<Conversation[]>("/conversations", {
     params: filtros,

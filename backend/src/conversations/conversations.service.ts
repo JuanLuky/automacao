@@ -12,6 +12,16 @@ import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { Message, MessageOrigin } from '../messages/entities/message.entity';
 import { EventsGateway } from '../websocket/events.gateway';
 
+function inicioDoDiaLocal(dataIso: string): Date {
+  const [ano, mes, dia] = dataIso.split('-').map(Number);
+  return new Date(ano, mes - 1, dia, 0, 0, 0, 0);
+}
+
+function fimDoDiaLocal(dataIso: string): Date {
+  const [ano, mes, dia] = dataIso.split('-').map(Number);
+  return new Date(ano, mes - 1, dia, 23, 59, 59, 999);
+}
+
 @Injectable()
 export class ConversationsService {
   constructor(
@@ -22,17 +32,58 @@ export class ConversationsService {
     private readonly eventsGateway: EventsGateway,
   ) {}
 
-  findAll(filtros: { status?: ConversationStatus; departamento_id?: string }) {
-    return this.conversationsRepository.find({
-      where: {
-        ...(filtros.status ? { status: filtros.status } : {}),
-        ...(filtros.departamento_id
-          ? { departamento_id: filtros.departamento_id }
-          : {}),
-      },
-      relations: ['departamento', 'atendente'],
-      order: { criado_em: 'ASC' },
-    });
+  findAll(filtros: {
+    status?: ConversationStatus;
+    departamento_id?: string;
+    busca?: string;
+    data_inicio?: string;
+    data_fim?: string;
+  }) {
+    const qb = this.conversationsRepository
+      .createQueryBuilder('conversation')
+      .leftJoinAndSelect('conversation.departamento', 'departamento')
+      .leftJoinAndSelect('conversation.atendente', 'atendente')
+      .orderBy('conversation.criado_em', 'ASC');
+
+    if (filtros.status) {
+      qb.andWhere('conversation.status = :status', { status: filtros.status });
+    }
+    if (filtros.departamento_id) {
+      qb.andWhere('conversation.departamento_id = :departamento_id', {
+        departamento_id: filtros.departamento_id,
+      });
+    }
+    // Busca por nome do cliente ou telefone — usado pela tela de conversas
+    // finalizadas, pra achar "aquela conversa de terça com o cliente X".
+    if (filtros.busca) {
+      qb.andWhere(
+        '(conversation.cliente_nome ILIKE :busca OR conversation.telefone ILIKE :busca)',
+        { busca: `%${filtros.busca}%` },
+      );
+    }
+    // Filtra pela data de criação (dia local do processo, ver CLAUDE.md
+    // sobre timestamptz/timezone) — não pela data de finalização, pra também
+    // funcionar em conversas que ainda não terminaram.
+    //
+    // "new Date('YYYY-MM-DD')" é interpretado como meia-noite em UTC (spec do
+    // JS), não no fuso local — combinado com o processo rodando em
+    // America/Sao_Paulo (UTC-3), um .setHours(0,0,0,0) em cima disso ajusta a
+    // hora local mas acaba caindo no dia anterior (a meia-noite UTC já
+    // "virou" 21h do dia anterior aqui). Construindo o Date a partir dos
+    // componentes ano/mês/dia (em vez de fazer parse da string), o horário
+    // 00:00/23:59 já nasce no fuso local certo.
+    if (filtros.data_inicio) {
+      qb.andWhere('conversation.criado_em >= :data_inicio', {
+        data_inicio: inicioDoDiaLocal(filtros.data_inicio),
+      });
+    }
+    if (filtros.data_fim) {
+      qb.andWhere('conversation.criado_em <= :data_fim', {
+        data_fim: fimDoDiaLocal(filtros.data_fim),
+      });
+    }
+
+    return qb.getMany();
   }
 
   // Usado pelo n8n para saber se já existe uma conversa em aberto para o telefone.

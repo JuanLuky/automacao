@@ -25,8 +25,17 @@ export class ConversationsController {
   findAll(
     @Query('status') status?: ConversationStatus,
     @Query('departamento_id') departamento_id?: string,
+    @Query('busca') busca?: string,
+    @Query('data_inicio') data_inicio?: string,
+    @Query('data_fim') data_fim?: string,
   ) {
-    return this.conversationsService.findAll({ status, departamento_id });
+    return this.conversationsService.findAll({
+      status,
+      departamento_id,
+      busca,
+      data_inicio,
+      data_fim,
+    });
   }
 
   // Rota usada pelo n8n para checar se já existe conversa em aberto.
