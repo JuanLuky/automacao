@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Inbox, Loader2, Phone, Search, User as UserIcon } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Inbox,
+  Loader2,
+  Phone,
+  Search,
+  User as UserIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -10,7 +19,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
-import { assumeConversation, getConversations, normalizeError } from "@/lib/api";
+import {
+  assumeConversation,
+  EVOLUTION_INSTANCE,
+  getConversationsPaginado,
+  normalizeError,
+  sendMessage,
+} from "@/lib/api";
+import { mensagemAutomaticaAssumir } from "@/lib/quickReplies";
 import { formatRelativeTime } from "@/lib/time";
 import type { Conversation, ConversationStatus } from "@/types";
 
@@ -19,6 +35,8 @@ const TABS: { status: ConversationStatus; label: string }[] = [
   { status: "em_atendimento", label: "Em atendimento" },
   { status: "finalizado", label: "Finalizadas" },
 ];
+
+const POR_PAGINA = 5;
 
 export default function FilaPage() {
   const router = useRouter();
@@ -30,6 +48,8 @@ export default function FilaPage() {
   const [tab, setTab] = useState<ConversationStatus>("aguardando");
   const [departamentoId, setDepartamentoId] = useState("");
   const [conversas, setConversas] = useState<Conversation[]>([]);
+  const [total, setTotal] = useState(0);
+  const [pagina, setPagina] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [assumindoId, setAssumindoId] = useState<string | null>(null);
@@ -50,18 +70,26 @@ export default function FilaPage() {
   const filtroDepartamento = isAdmin ? departamentoId || undefined : user?.departamento_id;
   const isFinalizadas = tab === "finalizado";
 
+  // Trocar de aba ou de filtro invalida a página atual — sempre volta pra 1.
+  useEffect(() => {
+    setPagina(1);
+  }, [tab, filtroDepartamento, buscaDebounced, dataInicio, dataFim]);
+
   const carregar = useCallback(async () => {
     if (semSetor) {
       setConversas([]);
+      setTotal(0);
       setIsLoading(false);
       return;
     }
     setIsLoading(true);
     setErro(null);
     try {
-      const data = await getConversations({
+      const { dados, total } = await getConversationsPaginado({
         status: tab,
         departamento_id: filtroDepartamento,
+        pagina,
+        por_pagina: POR_PAGINA,
         ...(isFinalizadas
           ? {
               busca: buscaDebounced || undefined,
@@ -70,17 +98,29 @@ export default function FilaPage() {
             }
           : {}),
       });
-      setConversas(data);
+      setConversas(dados);
+      setTotal(total);
+
+      // Uma conversa pode sair da lista entre um carregamento e outro (ex:
+      // outro atendente assumiu enquanto esta página estava aberta) — se a
+      // página atual ficou fora do intervalo válido, volta pra última página
+      // que ainda existe em vez de mostrar uma tela vazia enganosa.
+      const totalPaginasAtual = Math.max(1, Math.ceil(total / POR_PAGINA));
+      if (pagina > totalPaginasAtual) {
+        setPagina(totalPaginasAtual);
+      }
     } catch (error) {
       setErro(normalizeError(error).message);
     } finally {
       setIsLoading(false);
     }
-  }, [tab, filtroDepartamento, semSetor, isFinalizadas, buscaDebounced, dataInicio, dataFim]);
+  }, [tab, filtroDepartamento, semSetor, isFinalizadas, buscaDebounced, dataInicio, dataFim, pagina]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
 
   // Primeiro teste de ponta a ponta do WebSocket: qualquer mudança relevante
   // de conversa recarrega a lista respeitando os filtros atuais.
@@ -93,6 +133,18 @@ export default function FilaPage() {
     setErro(null);
     try {
       await assumeConversation(id);
+      // Best-effort: mesmo se o envio da mensagem de abertura falhar (ex:
+      // WhatsApp fora do ar), o atendimento já foi assumido e a navegação
+      // segue normalmente.
+      try {
+        await sendMessage(id, {
+          origem: "atendente",
+          mensagem: mensagemAutomaticaAssumir(user?.nome ?? ""),
+          instance: EVOLUTION_INSTANCE,
+        });
+      } catch {
+        // ignora — não bloqueia a navegação
+      }
       router.push(`/conversas/${id}`);
     } catch (error) {
       setErro(normalizeError(error).message);
@@ -286,6 +338,34 @@ export default function FilaPage() {
             </li>
           ))}
         </ul>
+      )}
+
+      {!semSetor && !isLoading && total > POR_PAGINA && (
+        <div className="mt-6 flex items-center justify-between gap-4">
+          <p className="text-[0.8125rem] text-secondary">
+            Página {pagina} de {totalPaginas} · {total} conversas
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              className="!px-3 !py-2 text-[0.8125rem]"
+              disabled={pagina <= 1}
+              onClick={() => setPagina((p) => Math.max(1, p - 1))}
+            >
+              <ChevronLeft size={15} />
+              Anterior
+            </Button>
+            <Button
+              variant="ghost"
+              className="!px-3 !py-2 text-[0.8125rem]"
+              disabled={pagina >= totalPaginas}
+              onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+            >
+              Próxima
+              <ChevronRight size={15} />
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

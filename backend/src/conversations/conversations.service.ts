@@ -32,12 +32,19 @@ export class ConversationsService {
     private readonly eventsGateway: EventsGateway,
   ) {}
 
+  // Sem "pagina"/"por_pagina" devolve o array completo (comportamento
+  // original, usado pelo dashboard e por getConversation no frontend, que
+  // dependem da lista inteira). Com os dois presentes, devolve paginado —
+  // usado pelas abas da fila, que só herdam o pequeno risco de paginação
+  // client-side ficar pesada quando "finalizadas" acumular muitos registros.
   findAll(filtros: {
     status?: ConversationStatus;
     departamento_id?: string;
     busca?: string;
     data_inicio?: string;
     data_fim?: string;
+    pagina?: number;
+    por_pagina?: number;
   }) {
     const qb = this.conversationsRepository
       .createQueryBuilder('conversation')
@@ -83,7 +90,18 @@ export class ConversationsService {
       });
     }
 
-    return qb.getMany();
+    if (!filtros.pagina || !filtros.por_pagina) {
+      return qb.getMany();
+    }
+
+    const pagina = Math.max(1, filtros.pagina);
+    const porPagina = Math.max(1, filtros.por_pagina);
+
+    return qb
+      .skip((pagina - 1) * porPagina)
+      .take(porPagina)
+      .getManyAndCount()
+      .then(([dados, total]) => ({ dados, total, pagina, por_pagina: porPagina }));
   }
 
   // Usado pelo n8n para saber se já existe uma conversa em aberto para o telefone.

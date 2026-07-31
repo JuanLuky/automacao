@@ -2,6 +2,7 @@ import axios, { AxiosError } from "axios";
 import type {
   ApiError,
   Conversation,
+  ConversationsPaginado,
   ConversationStatus,
   CreateDepartmentPayload,
   CreateUserPayload,
@@ -20,6 +21,8 @@ import type {
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+
+export const EVOLUTION_INSTANCE = process.env.NEXT_PUBLIC_EVOLUTION_INSTANCE ?? "";
 
 const TOKEN_KEY = "atendimento.token";
 const USER_KEY = "atendimento.user";
@@ -155,6 +158,22 @@ export async function getConversations(filtros: {
   data_fim?: string;
 }): Promise<Conversation[]> {
   const { data } = await api.get<Conversation[]>("/conversations", {
+    params: filtros,
+  });
+  return data;
+}
+
+/** Igual a getConversations, mas paginado — usado pelas abas da fila (10 por página). */
+export async function getConversationsPaginado(filtros: {
+  status?: ConversationStatus;
+  departamento_id?: string;
+  busca?: string;
+  data_inicio?: string;
+  data_fim?: string;
+  pagina: number;
+  por_pagina: number;
+}): Promise<ConversationsPaginado> {
+  const { data } = await api.get<ConversationsPaginado>("/conversations", {
     params: filtros,
   });
   return data;

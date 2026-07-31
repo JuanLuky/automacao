@@ -52,6 +52,13 @@ export interface Conversation {
   finalizado_em: string | null;
 }
 
+export interface ConversationsPaginado {
+  dados: Conversation[];
+  total: number;
+  pagina: number;
+  por_pagina: number;
+}
+
 export interface CreateDepartmentPayload {
   nome: string;
   codigo: string;

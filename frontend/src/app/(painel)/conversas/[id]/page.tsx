@@ -21,12 +21,15 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { QuickReplies } from "@/components/ui/QuickReplies";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import {
+  EVOLUTION_INSTANCE,
   finishConversation,
   getConversation,
   getMessages,
@@ -35,13 +38,13 @@ import {
   transferConversation,
 } from "@/lib/api";
 import { formatTime } from "@/lib/time";
+import { MENSAGEM_AUTOMATICA_FINALIZAR, resolverTemplate } from "@/lib/quickReplies";
 import type { Conversation, Message } from "@/types";
-
-const EVOLUTION_INSTANCE = process.env.NEXT_PUBLIC_EVOLUTION_INSTANCE ?? "";
 
 export default function ConversaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
   const { departments } = useDepartments();
   const { clearUnread } = useNotifications();
 
@@ -138,6 +141,18 @@ export default function ConversaPage() {
     setFinalizando(true);
     setErro(null);
     try {
+      // Best-effort: mesmo se o envio da mensagem de encerramento falhar
+      // (ex: WhatsApp fora do ar), a finalização segue — o atendente ainda
+      // quer poder encerrar o atendimento.
+      try {
+        await sendMessage(id, {
+          origem: "atendente",
+          mensagem: MENSAGEM_AUTOMATICA_FINALIZAR,
+          instance: EVOLUTION_INSTANCE,
+        });
+      } catch {
+        // ignora — não bloqueia a finalização
+      }
       await finishConversation(id);
       router.push("/fila");
     } catch (error) {
@@ -373,6 +388,12 @@ export default function ConversaPage() {
       </div>
 
       <form onSubmit={handleEnviar} className="mt-4 flex items-end gap-3">
+        <QuickReplies
+          disabled={!podeResponder}
+          onSelect={(template) =>
+            setTexto(resolverTemplate(template, user?.nome ?? ""))
+          }
+        />
         <textarea
           value={texto}
           onChange={(e) => setTexto(e.target.value)}

@@ -28,6 +28,8 @@ export class ConversationsController {
     @Query('busca') busca?: string,
     @Query('data_inicio') data_inicio?: string,
     @Query('data_fim') data_fim?: string,
+    @Query('pagina') pagina?: string,
+    @Query('por_pagina') por_pagina?: string,
   ) {
     return this.conversationsService.findAll({
       status,
@@ -35,6 +37,8 @@ export class ConversationsController {
       busca,
       data_inicio,
       data_fim,
+      pagina: pagina ? parseInt(pagina, 10) : undefined,
+      por_pagina: por_pagina ? parseInt(por_pagina, 10) : undefined,
     });
   }
 
