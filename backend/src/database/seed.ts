@@ -4,6 +4,8 @@ import * as bcrypt from 'bcrypt';
 import { AppDataSource } from './data-source';
 import { Department } from '../departments/entities/department.entity';
 import { User, UserRole } from '../users/entities/user.entity';
+import { BusinessHours } from '../business-hours/entities/business-hours.entity';
+import { BUSINESS_HOURS_PADRAO } from '../business-hours/business-hours.service';
 
 dotenv.config();
 
@@ -20,6 +22,7 @@ async function seed() {
 
   const departmentsRepo = AppDataSource.getRepository(Department);
   const usersRepo = AppDataSource.getRepository(User);
+  const businessHoursRepo = AppDataSource.getRepository(BusinessHours);
 
   for (const dep of DEPARTAMENTOS_PADRAO) {
     const existente = await departmentsRepo.findOne({
@@ -51,6 +54,14 @@ async function seed() {
     console.log(`Usuário admin criado: ${emailAdmin} / senha: ${senhaAdmin}`);
   } else {
     console.log('Usuário admin já existe, pulando.');
+  }
+
+  const businessHoursExistente = await businessHoursRepo.find({ take: 1 });
+  if (businessHoursExistente.length === 0) {
+    await businessHoursRepo.save(businessHoursRepo.create(BUSINESS_HOURS_PADRAO));
+    console.log('Horário de funcionamento padrão criado.');
+  } else {
+    console.log('Horário de funcionamento já configurado, pulando.');
   }
 
   await AppDataSource.destroy();

@@ -4,7 +4,9 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  Activity,
   Building2,
+  Clock,
   LayoutDashboard,
   ListChecks,
   Loader2,
@@ -29,6 +31,8 @@ const NAV_ADMIN = [
   { href: "/usuarios", label: "Usuários", icon: UserPlus },
   { href: "/departamentos", label: "Setores", icon: Building2 },
   { href: "/whatsapp", label: "WhatsApp", icon: QrCode },
+  { href: "/horario-funcionamento", label: "Horário", icon: Clock },
+  { href: "/status/publicar", label: "Status", icon: Activity },
 ];
 
 export default function PainelLayout({

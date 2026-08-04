@@ -129,3 +129,42 @@ export interface WhatsappQrCode {
   state?: string;
   instance?: { instanceName?: string; state?: string };
 }
+
+export type StatusEstado = "operacional" | "instabilidade" | "indisponivel";
+
+export interface StatusUpdate {
+  id: string;
+  estado: StatusEstado;
+  mensagem: string;
+  criado_em: string;
+}
+
+/** GET /status/atual pode devolver isso sem nenhum post ainda existir (criado_em null). */
+export interface StatusAtual {
+  id?: string;
+  estado: StatusEstado;
+  mensagem: string;
+  criado_em: string | null;
+}
+
+export interface CreateStatusUpdatePayload {
+  estado: StatusEstado;
+  mensagem: string;
+}
+
+export interface BusinessHours {
+  id: string;
+  dias_funcionamento: number[];
+  hora_inicio: string;
+  hora_fim: string;
+  mensagem_fora_horario: string;
+  atualizado_em: string;
+  aberto: boolean;
+}
+
+export interface UpdateBusinessHoursPayload {
+  dias_funcionamento?: number[];
+  hora_inicio?: string;
+  hora_fim?: string;
+  mensagem_fora_horario?: string;
+}

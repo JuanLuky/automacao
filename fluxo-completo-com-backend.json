@@ -210,6 +210,66 @@
 
     {
       "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:3000/business-hours",
+        "options": {}
+      },
+      "name": "Consultar Horário de Funcionamento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2840, 700],
+      "id": "node-business-hours-check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-dentro-horario",
+              "leftValue": "={{ $json.aberto }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Dentro do Horário de Funcionamento?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3060, 700],
+      "id": "node-if-business-hours"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://evolution-api:8080/message/sendText/\" + $('Combinar Fragmentos').item.json.instance }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "COLOQUE_AQUI_A_EVOLUTION_API_KEY" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": $('Combinar Fragmentos').item.json.telefone, \"text\": $('Consultar Horário de Funcionamento').item.json.mensagem_fora_horario } }}",
+        "options": {}
+      },
+      "name": "Enviar Mensagem - Fora do Horário",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3280, 860],
+      "id": "node-send-outside-hours"
+    },
+
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -522,7 +582,16 @@
       "main": [[{ "node": "Redis - Limpar Buffer", "type": "main", "index": 0 }]]
     },
     "Redis - Limpar Buffer": {
-      "main": [[{ "node": "Escolheu Departamento? (1-5)", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Consultar Horário de Funcionamento", "type": "main", "index": 0 }]]
+    },
+    "Consultar Horário de Funcionamento": {
+      "main": [[{ "node": "Dentro do Horário de Funcionamento?", "type": "main", "index": 0 }]]
+    },
+    "Dentro do Horário de Funcionamento?": {
+      "main": [
+        [{ "node": "Escolheu Departamento? (1-5)", "type": "main", "index": 0 }],
+        [{ "node": "Enviar Mensagem - Fora do Horário", "type": "main", "index": 0 }]
+      ]
     },
 
     "Escolheu Departamento? (1-5)": {

@@ -9,10 +9,14 @@ import { MessagesModule } from './messages/messages.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { EvolutionModule } from './integrations/evolution/evolution.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { StatusModule } from './status/status.module';
+import { BusinessHoursModule } from './business-hours/business-hours.module';
 import { User } from './users/entities/user.entity';
 import { Department } from './departments/entities/department.entity';
 import { Conversation } from './conversations/entities/conversation.entity';
 import { Message } from './messages/entities/message.entity';
+import { StatusUpdate } from './status/entities/status-update.entity';
+import { BusinessHours } from './business-hours/entities/business-hours.entity';
 
 @Module({
   imports: [
@@ -23,7 +27,7 @@ import { Message } from './messages/entities/message.entity';
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
         url: configService.get<string>('DATABASE_URL'),
-        entities: [User, Department, Conversation, Message],
+        entities: [User, Department, Conversation, Message, StatusUpdate, BusinessHours],
         // Schema controlado por migrations (npm run migration:run), não pelo runtime da app.
         // Ver src/database/migrations/ e src/database/data-source.ts.
         synchronize: false,
@@ -37,6 +41,8 @@ import { Message } from './messages/entities/message.entity';
     WebsocketModule,
     EvolutionModule,
     WhatsappModule,
+    StatusModule,
+    BusinessHoursModule,
   ],
 })
 export class AppModule {}

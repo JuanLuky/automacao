@@ -1,17 +1,22 @@
 import axios, { AxiosError } from "axios";
 import type {
   ApiError,
+  BusinessHours,
   Conversation,
   ConversationsPaginado,
   ConversationStatus,
   CreateDepartmentPayload,
+  CreateStatusUpdatePayload,
   CreateUserPayload,
   Department,
   LoginPayload,
   LoginResponse,
   Message,
   SendMessagePayload,
+  StatusAtual,
+  StatusUpdate,
   TransferPayload,
+  UpdateBusinessHoursPayload,
   UpdateDepartmentPayload,
   UpdateUserPayload,
   User,
@@ -267,5 +272,37 @@ export async function getWhatsappQrCode(instance: string): Promise<WhatsappQrCod
   const { data } = await api.get<WhatsappQrCode>("/whatsapp/qrcode", {
     params: { instance },
   });
+  return data;
+}
+
+/** Público — usado na página /status, sem login. */
+export async function getStatusAtual(): Promise<StatusAtual> {
+  const { data } = await api.get<StatusAtual>("/status/atual");
+  return data;
+}
+
+/** Público — usado na página /status, sem login. */
+export async function getStatusHistorico(): Promise<StatusUpdate[]> {
+  const { data } = await api.get<StatusUpdate[]>("/status/historico");
+  return data;
+}
+
+export async function postStatusUpdate(
+  payload: CreateStatusUpdatePayload,
+): Promise<StatusUpdate> {
+  const { data } = await api.post<StatusUpdate>("/status", payload);
+  return data;
+}
+
+/** Público — o n8n consulta sem autenticação, mesmo padrão de getDepartments. */
+export async function getBusinessHours(): Promise<BusinessHours> {
+  const { data } = await api.get<BusinessHours>("/business-hours");
+  return data;
+}
+
+export async function updateBusinessHours(
+  payload: UpdateBusinessHoursPayload,
+): Promise<BusinessHours> {
+  const { data } = await api.patch<BusinessHours>("/business-hours", payload);
   return data;
 }
