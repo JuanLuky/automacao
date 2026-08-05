@@ -36,6 +36,44 @@ export class EvolutionService {
     }
   }
 
+  async enviarMidia(
+    instance: string,
+    telefone: string,
+    opcoes: {
+      mediatype: 'image' | 'document';
+      mimetype: string;
+      caption?: string;
+      fileName?: string;
+      mediaBase64: string;
+    },
+  ): Promise<void> {
+    const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+    const response = await fetch(`${baseUrl}/message/sendMedia/${instance}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: apiKey ?? '',
+      },
+      body: JSON.stringify({
+        number: telefone,
+        mediatype: opcoes.mediatype,
+        mimetype: opcoes.mimetype,
+        caption: opcoes.caption,
+        fileName: opcoes.fileName,
+        media: opcoes.mediaBase64,
+      }),
+    });
+
+    if (!response.ok) {
+      const corpo = await response.text();
+      throw new Error(
+        `Falha ao enviar mídia via Evolution API (${response.status}): ${corpo}`,
+      );
+    }
+  }
+
   async getConnectionState(instance: string): Promise<Record<string, unknown>> {
     const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
     const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');

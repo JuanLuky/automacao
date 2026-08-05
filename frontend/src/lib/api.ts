@@ -229,6 +229,21 @@ export async function sendMessage(
   return data;
 }
 
+// Busca o arquivo de uma mensagem de mídia como blob (via client autenticado,
+// evita expor o token em query string) e devolve uma object URL pronta pra
+// usar em <img>/<audio>/link — quem chama é responsável por revogar
+// (URL.revokeObjectURL) quando não precisar mais.
+export async function getMediaObjectUrl(
+  conversationId: string,
+  messageId: string,
+): Promise<string> {
+  const { data } = await api.get(
+    `/conversations/${conversationId}/messages/${messageId}/media`,
+    { responseType: "blob" },
+  );
+  return URL.createObjectURL(data as Blob);
+}
+
 export async function getUsers(): Promise<User[]> {
   const { data } = await api.get<User[]>("/users");
   return data;

@@ -15,6 +15,13 @@ export enum MessageOrigin {
   SISTEMA = 'sistema',
 }
 
+export enum MessageTipo {
+  TEXTO = 'texto',
+  IMAGEM = 'imagem',
+  AUDIO = 'audio',
+  DOCUMENTO = 'documento',
+}
+
 @Entity('messages')
 export class Message {
   @PrimaryGeneratedColumn('uuid')
@@ -32,6 +39,21 @@ export class Message {
 
   @Column({ type: 'text' })
   mensagem: string;
+
+  @Column({ type: 'enum', enum: MessageTipo, default: MessageTipo.TEXTO })
+  tipo: MessageTipo;
+
+  // Caminho relativo dentro do diretório de storage de mídia (ver
+  // MediaStorageService) — nunca o nome de arquivo enviado pelo cliente.
+  @Column({ type: 'text', nullable: true })
+  midia_path: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  midia_mimetype: string | null;
+
+  // Nome de exibição (documentos) — só para UI, não usado para montar path em disco.
+  @Column({ type: 'text', nullable: true })
+  midia_nome_arquivo: string | null;
 
   // Preenchido só quando origem = atendente: quem estava com a conversa
   // assumida no momento do envio (ver MessagesService.create).

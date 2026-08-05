@@ -6,6 +6,7 @@ import { MessagesService } from './messages.service';
 import { MessagesController } from './messages.controller';
 import { WebsocketModule } from '../websocket/websocket.module';
 import { EvolutionModule } from '../integrations/evolution/evolution.module';
+import { MediaStorageService } from './media-storage.service';
 
 @Module({
   imports: [
@@ -14,6 +15,6 @@ import { EvolutionModule } from '../integrations/evolution/evolution.module';
     EvolutionModule,
   ],
   controllers: [MessagesController],
-  providers: [MessagesService],
+  providers: [MessagesService, MediaStorageService],
 })
 export class MessagesModule {}

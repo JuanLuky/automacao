@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
 } from "react";
@@ -15,12 +16,15 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   Loader2,
+  Paperclip,
   Phone,
   Send,
   User as UserIcon,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { MediaMessage } from "@/components/ui/MediaMessage";
 import { QuickReplies } from "@/components/ui/QuickReplies";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -39,7 +43,32 @@ import {
 } from "@/lib/api";
 import { formatTime } from "@/lib/time";
 import { MENSAGEM_AUTOMATICA_FINALIZAR, resolverTemplate } from "@/lib/quickReplies";
-import type { Conversation, Message } from "@/types";
+import type { Conversation, Message, MessageTipo } from "@/types";
+
+// Mesma allowlist do backend (ver MediaStorageService) — checar aqui só pra
+// dar feedback rápido antes de gastar uma requisição; quem garante de
+// verdade é o backend.
+const MIME_PARA_TIPO: Record<string, MessageTipo> = {
+  "image/jpeg": "imagem",
+  "image/png": "imagem",
+  "image/webp": "imagem",
+  "application/pdf": "documento",
+  "application/msword": "documento",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    "documento",
+  "application/vnd.ms-excel": "documento",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+    "documento",
+};
+const TAMANHO_MAXIMO_BYTES = 15 * 1024 * 1024;
+const LEGENDAS_PADRAO = ["[imagem]", "[áudio]", "[documento]"];
+
+interface AnexoStaged {
+  tipo: MessageTipo;
+  base64: string;
+  mimetype: string;
+  nomeArquivo: string;
+}
 
 export default function ConversaPage() {
   const { id } = useParams<{ id: string }>();
@@ -55,6 +84,8 @@ export default function ConversaPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const [anexo, setAnexo] = useState<AnexoStaged | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [finalizando, setFinalizando] = useState(false);
   const [confirmandoFinalizar, setConfirmandoFinalizar] = useState(false);
 
@@ -112,7 +143,7 @@ export default function ConversaPage() {
   async function handleEnviar(event: FormEvent) {
     event.preventDefault();
     const mensagem = texto.trim();
-    if (!mensagem || enviando) return;
+    if ((!mensagem && !anexo) || enviando) return;
 
     setEnviando(true);
     setErro(null);
@@ -121,13 +152,46 @@ export default function ConversaPage() {
         origem: "atendente",
         mensagem,
         instance: EVOLUTION_INSTANCE,
+        ...(anexo && {
+          tipo: anexo.tipo,
+          midia_base64: anexo.base64,
+          midia_mimetype: anexo.mimetype,
+          midia_nome_arquivo: anexo.nomeArquivo,
+        }),
       });
       setTexto("");
+      setAnexo(null);
     } catch (error) {
       setErro(normalizeError(error).message);
     } finally {
       setEnviando(false);
     }
+  }
+
+  function handleSelecionarArquivo(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = ""; // permite selecionar o mesmo arquivo de novo depois
+    if (!file) return;
+
+    const tipo = MIME_PARA_TIPO[file.type];
+    if (!tipo) {
+      setErro("Tipo de arquivo não suportado. Envie imagem (JPEG/PNG/WEBP) ou documento (PDF/DOC/XLS).");
+      return;
+    }
+    if (file.size > TAMANHO_MAXIMO_BYTES) {
+      setErro("Arquivo maior que o limite permitido (15MB).");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const resultado = reader.result as string;
+      const base64 = resultado.slice(resultado.indexOf(",") + 1);
+      setAnexo({ tipo, base64, mimetype: file.type, nomeArquivo: file.name });
+      setErro(null);
+    };
+    reader.onerror = () => setErro("Não foi possível ler o arquivo selecionado.");
+    reader.readAsDataURL(file);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -371,7 +435,16 @@ export default function ConversaPage() {
                     : "border border-app bg-raised text-primary"
                 }`}
               >
-                <p className="whitespace-pre-wrap">{m.mensagem}</p>
+                {m.tipo && m.tipo !== "texto" ? (
+                  <div className="flex flex-col gap-1.5">
+                    <MediaMessage message={m} />
+                    {!LEGENDAS_PADRAO.includes(m.mensagem) && (
+                      <p className="whitespace-pre-wrap">{m.mensagem}</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap">{m.mensagem}</p>
+                )}
                 <p
                   className={`mt-1 text-[0.6875rem] ${
                     m.origem === "atendente"
@@ -387,13 +460,45 @@ export default function ConversaPage() {
         )}
       </div>
 
-      <form onSubmit={handleEnviar} className="mt-4 flex items-end gap-3">
+      {anexo && (
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-app bg-sunken px-3 py-2 text-[0.8125rem] text-secondary">
+          <Paperclip size={14} className="shrink-0" />
+          <span className="truncate">{anexo.nomeArquivo}</span>
+          <button
+            type="button"
+            onClick={() => setAnexo(null)}
+            aria-label="Remover anexo"
+            className="ml-auto shrink-0 rounded-md p-1 text-muted hover:text-primary"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      <form onSubmit={handleEnviar} className={`flex items-end gap-3 ${anexo ? "mt-2" : "mt-4"}`}>
         <QuickReplies
           disabled={!podeResponder}
           onSelect={(template) =>
             setTexto(resolverTemplate(template, user?.nome ?? ""))
           }
         />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx"
+          onChange={handleSelecionarArquivo}
+          disabled={!podeResponder}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={!podeResponder}
+          aria-label="Anexar arquivo"
+          className="rounded-xl border border-app p-3.5 text-secondary transition-colors hover:border-mist-500 hover:text-primary disabled:cursor-not-allowed disabled:opacity-55"
+        >
+          <Paperclip size={17} />
+        </button>
         <textarea
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
@@ -410,7 +515,7 @@ export default function ConversaPage() {
         <Button
           type="submit"
           loading={enviando}
-          disabled={!podeResponder || !texto.trim()}
+          disabled={!podeResponder || (!texto.trim() && !anexo)}
           className="!px-4 !py-3.5"
         >
           <Send size={17} />

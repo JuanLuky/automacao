@@ -6,6 +6,8 @@ export type ConversationStatus =
 
 export type MessageOrigin = "cliente" | "atendente" | "sistema";
 
+export type MessageTipo = "texto" | "imagem" | "audio" | "documento";
+
 export type UserRole = "admin" | "atendente";
 
 export interface Department {
@@ -32,6 +34,11 @@ export interface Message {
   criado_em: string;
   conversation_id: string;
   atendente?: User | null;
+  // Ausente/'texto' = mensagem de texto comum. Nos outros tipos, buscar o
+  // arquivo via getMediaUrl(conversationId, messageId) — ver lib/api.ts.
+  tipo?: MessageTipo;
+  midia_mimetype?: string | null;
+  midia_nome_arquivo?: string | null;
   // Só vêm preenchidos no payload do evento "nova_mensagem" via socket
   // (ver MessagesService.create no backend) — não fazem parte do histórico
   // retornado por GET /conversations/:id/messages.
@@ -104,6 +111,11 @@ export interface SendMessagePayload {
   origem: MessageOrigin;
   mensagem: string;
   instance?: string;
+  // Presentes só ao anexar um arquivo (ver Anexo em conversas/[id]/page.tsx).
+  tipo?: MessageTipo;
+  midia_base64?: string;
+  midia_mimetype?: string;
+  midia_nome_arquivo?: string;
 }
 
 /** Erro normalizado para exibição na interface. */

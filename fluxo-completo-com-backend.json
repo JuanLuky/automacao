@@ -17,7 +17,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.item.json.body ?? $input.item.json;\nconst event = body.event;\nconst data = body.data;\n\nif (event !== 'messages.upsert') {\n  return [];\n}\nif (!data || !data.key) {\n  return [];\n}\nif (data.key.fromMe) {\n  return [];\n}\n\nconst remoteJid = data.key.remoteJid || '';\nconst telefone = remoteJid.split('@')[0];\nconst nome = data.pushName || 'Cliente';\nconst texto =\n  data.message?.conversation ||\n  data.message?.extendedTextMessage?.text ||\n  '';\n\nreturn [\n  {\n    json: {\n      telefone,\n      nome,\n      texto: texto.trim(),\n      instance: body.instance,\n    },\n  },\n];\n"
+        "jsCode": "const body = $input.item.json.body ?? $input.item.json;\nconst event = body.event;\nconst data = body.data;\n\nif (event !== 'messages.upsert') {\n  return [];\n}\nif (!data || !data.key) {\n  return [];\n}\nif (data.key.fromMe) {\n  return [];\n}\n\nconst remoteJid = data.key.remoteJid || '';\nconst telefone = remoteJid.split('@')[0];\nconst nome = data.pushName || 'Cliente';\n\n// Tipo de mídia detectado pela presença do campo correspondente em\n// data.message — o texto/legenda de cada tipo vem de onde a Evolution\n// API já coloca (conversation/extendedTextMessage para texto puro,\n// caption para imagem/documento). O conteúdo do arquivo em si (base64)\n// só é buscado depois, via node \"Buscar Mídia\", usando midia_message_id.\nconst msg = data.message || {};\nlet tipo = 'texto';\nlet texto = msg.conversation || msg.extendedTextMessage?.text || '';\n\nif (msg.imageMessage) {\n  tipo = 'imagem';\n  texto = msg.imageMessage.caption || '';\n} else if (msg.audioMessage) {\n  tipo = 'audio';\n  texto = '';\n} else if (msg.documentMessage) {\n  tipo = 'documento';\n  texto = msg.documentMessage.caption || '';\n}\n\nreturn [\n  {\n    json: {\n      telefone,\n      nome,\n      texto: texto.trim(),\n      instance: body.instance,\n      tipo,\n      midia_message_id: tipo !== 'texto' ? data.key.id : null,\n    },\n  },\n];\n"
       },
       "name": "Extrair Dados da Mensagem",
       "type": "n8n-nodes-base.code",
@@ -45,8 +45,61 @@
       "name": "Preparar Mensagem do Cliente",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [860, 220],
+      "position": [1080, 300],
       "id": "node-prepare-message"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-tipo-midia",
+              "leftValue": "={{ $('Extrair Dados da Mensagem').item.json.tipo }}",
+              "rightValue": "texto",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "É Mensagem de Mídia?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [860, 220],
+      "id": "node-if-midia"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://evolution-api:8080/chat/getBase64FromMediaMessage/\" + $('Extrair Dados da Mensagem').item.json.instance }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "COLOQUE_AQUI_A_EVOLUTION_API_KEY" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"message\": { \"key\": { \"id\": $('Extrair Dados da Mensagem').item.json.midia_message_id } } } }}",
+        "options": {}
+      },
+      "name": "Buscar Mídia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1080, 100],
+      "id": "node-fetch-media"
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\nconst conversa = $('Verificar Conversa Ativa').item.json;\nconst resultado = $json; // resposta de \"Buscar Mídia\": mediaType, fileName, size, mimetype, base64\n\nreturn [\n  {\n    json: {\n      conversation_id: conversa.id,\n      mensagem: original.texto,\n      tipo: original.tipo,\n      midia_base64: resultado.base64,\n      midia_mimetype: resultado.mimetype,\n      midia_nome_arquivo: resultado.fileName || null,\n    },\n  },\n];\n"
+      },
+      "name": "Montar Mensagem de Mídia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 100],
+      "id": "node-build-media-message"
     },
     {
       "parameters": {
@@ -58,13 +111,13 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"origem\": \"cliente\", \"mensagem\": $json.mensagem } }}",
+        "jsonBody": "={{ { \"origem\": \"cliente\", \"mensagem\": $json.mensagem, \"tipo\": $json.tipo, \"midia_base64\": $json.midia_base64, \"midia_mimetype\": $json.midia_mimetype, \"midia_nome_arquivo\": $json.midia_nome_arquivo } }}",
         "options": {}
       },
       "name": "Registrar Mensagem do Cliente",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1080, 220],
+      "position": [1520, 200],
       "id": "node-register-message"
     },
 
@@ -270,6 +323,28 @@
 
     {
       "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:3000/departments",
+        "options": {}
+      },
+      "name": "Buscar Departamentos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3060, 480],
+      "id": "node-fetch-departments"
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Combinar Fragmentos').item.json;\n\n// GET /departments já vem ordenado por nome (ver DepartmentsService.findAll) —\n// a numeração do menu segue essa mesma ordem, dinamicamente, sem mapeamento fixo.\n// O node HTTP Request separa cada elemento do array retornado pela API\n// em um item diferente — por isso reconstruímos o array com .all()\n// em vez de usar $input.item.json (que seria só 1 departamento).\nconst departamentos = $('Buscar Departamentos').all().map((item) => item.json);\n\nconst numero = Number(original.texto);\nconst valido = Number.isInteger(numero) && numero >= 1 && numero <= departamentos.length;\nconst departamento = valido ? departamentos[numero - 1] : null;\n\nreturn [\n  {\n    json: {\n      telefone: original.telefone,\n      nome: original.nome,\n      instance: original.instance,\n      texto: original.texto,\n      departamentos,\n      opcaoValida: valido,\n      departamento_id: departamento ? departamento.id : null,\n      departamento_nome: departamento ? departamento.nome : null,\n    },\n  },\n];\n"
+      },
+      "name": "Avaliar Escolha de Departamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3280, 480],
+      "id": "node-map-department"
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -278,43 +353,21 @@
           },
           "conditions": [
             {
-              "id": "cond-digito",
-              "leftValue": "={{ $('Combinar Fragmentos').item.json.texto }}",
-              "rightValue": "^[1-5]$",
-              "operator": { "type": "string", "operation": "regex" }
+              "id": "cond-opcao-valida",
+              "leftValue": "={{ $json.opcaoValida }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
             }
           ],
           "combinator": "and"
         },
         "options": {}
       },
-      "name": "Escolheu Departamento? (1-5)",
+      "name": "Escolheu Departamento Válido?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [3060, 560],
-      "id": "node-if-escolha"
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "http://host.docker.internal:3000/departments",
-        "options": {}
-      },
-      "name": "Buscar Departamentos",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [3280, 480],
-      "id": "node-fetch-departments"
-    },
-    {
-      "parameters": {
-        "jsCode": "const original = $('Combinar Fragmentos').item.json;\n\n// O node HTTP Request separa cada elemento do array retornado pela API\n// em um item diferente — por isso reconstruímos o array com .all()\n// em vez de usar $input.item.json (que seria só 1 departamento).\nconst departamentos = $('Buscar Departamentos').all().map((item) => item.json);\n\nconst codigoPorOpcao = {\n  '1': 'RH',\n  '2': 'FIN',\n  '3': 'CONT',\n  '4': 'TI',\n  '5': 'COM',\n};\n\nconst codigo = codigoPorOpcao[original.texto];\nconst departamento = departamentos.find((d) => d.codigo === codigo);\n\nif (!departamento) {\n  throw new Error(`Departamento com código ${codigo} não encontrado. Rode o seed do backend (npm run seed).`);\n}\n\nreturn [\n  {\n    json: {\n      telefone: original.telefone,\n      nome: original.nome,\n      instance: original.instance,\n      texto: original.texto,\n      departamento_id: departamento.id,\n      departamento_nome: departamento.nome,\n    },\n  },\n];\n"
-      },
-      "name": "Mapear Departamento",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
       "position": [3500, 480],
-      "id": "node-map-department"
+      "id": "node-if-escolha"
     },
     {
       "parameters": {
@@ -332,17 +385,17 @@
       "name": "Criar Conversa",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3720, 480],
+      "position": [3720, 400],
       "id": "node-create-conversation"
     },
     {
       "parameters": {
-        "jsCode": "const mapeado = $('Mapear Departamento').item.json;\n\nreturn [\n  {\n    json: {\n      telefone: mapeado.telefone,\n      instance: mapeado.instance,\n      resposta: `Perfeito! Você foi direcionado para o setor de *${mapeado.departamento_nome}*. Em instantes um atendente vai continuar seu atendimento por aqui. 🙂`,\n    },\n  },\n];\n"
+        "jsCode": "const mapeado = $('Avaliar Escolha de Departamento').item.json;\n\nreturn [\n  {\n    json: {\n      telefone: mapeado.telefone,\n      instance: mapeado.instance,\n      resposta: `Perfeito! Você foi direcionado para o setor de *${mapeado.departamento_nome}*. Em instantes um atendente vai continuar seu atendimento por aqui. 🙂`,\n    },\n  },\n];\n"
       },
       "name": "Montar Confirmação",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [3940, 480],
+      "position": [3940, 400],
       "id": "node-build-confirmation"
     },
     {
@@ -363,13 +416,23 @@
       "name": "Enviar Confirmação de Setor",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [4160, 480],
+      "position": [4160, 400],
       "id": "node-send-confirmation"
     },
     {
       "parameters": {
+        "jsCode": "const departamentos = $json.departamentos;\n\nconst linhas = departamentos\n  .map((d, indice) => `${indice + 1} - ${d.nome}`)\n  .join('\\n');\n\nreturn [\n  {\n    json: {\n      telefone: $json.telefone,\n      instance: $json.instance,\n      textoMenu: `Olá! Seja bem-vindo(a) 👋\\n\\nEscolha o departamento que você deseja falar:\\n\\n${linhas}\\n\\nDigite o número da opção desejada.`,\n    },\n  },\n];\n"
+      },
+      "name": "Montar Menu",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3720, 620],
+      "id": "node-build-menu-dinamico"
+    },
+    {
+      "parameters": {
         "method": "POST",
-        "url": "={{ \"http://evolution-api:8080/message/sendText/\" + $('Combinar Fragmentos').item.json.instance }}",
+        "url": "={{ \"http://evolution-api:8080/message/sendText/\" + $json.instance }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -378,13 +441,13 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"number\": $('Combinar Fragmentos').item.json.telefone, \"text\": \"Olá! Seja bem-vindo(a) 👋\\n\\nEscolha o departamento que você deseja falar:\\n\\n1 - RH\\n2 - Financeiro\\n3 - Contabilidade\\n4 - TI\\n5 - Comercial\\n\\nDigite o número da opção desejada.\" } }}",
+        "jsonBody": "={{ { \"number\": $json.telefone, \"text\": $json.textoMenu } }}",
         "options": {}
       },
       "name": "Enviar Menu",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3280, 660],
+      "position": [3940, 620],
       "id": "node-send-menu"
     },
 
@@ -543,9 +606,21 @@
     },
     "Verificar Conversa Ativa": {
       "main": [
-        [{ "node": "Preparar Mensagem do Cliente", "type": "main", "index": 0 }],
+        [{ "node": "É Mensagem de Mídia?", "type": "main", "index": 0 }],
         [{ "node": "Redis - Buscar Buffer Atual", "type": "main", "index": 0 }]
       ]
+    },
+    "É Mensagem de Mídia?": {
+      "main": [
+        [{ "node": "Buscar Mídia", "type": "main", "index": 0 }],
+        [{ "node": "Preparar Mensagem do Cliente", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar Mídia": {
+      "main": [[{ "node": "Montar Mensagem de Mídia", "type": "main", "index": 0 }]]
+    },
+    "Montar Mensagem de Mídia": {
+      "main": [[{ "node": "Registrar Mensagem do Cliente", "type": "main", "index": 0 }]]
     },
     "Preparar Mensagem do Cliente": {
       "main": [[{ "node": "Registrar Mensagem do Cliente", "type": "main", "index": 0 }]]
@@ -589,22 +664,25 @@
     },
     "Dentro do Horário de Funcionamento?": {
       "main": [
-        [{ "node": "Escolheu Departamento? (1-5)", "type": "main", "index": 0 }],
+        [{ "node": "Buscar Departamentos", "type": "main", "index": 0 }],
         [{ "node": "Enviar Mensagem - Fora do Horário", "type": "main", "index": 0 }]
       ]
     },
 
-    "Escolheu Departamento? (1-5)": {
+    "Buscar Departamentos": {
+      "main": [[{ "node": "Avaliar Escolha de Departamento", "type": "main", "index": 0 }]]
+    },
+    "Avaliar Escolha de Departamento": {
+      "main": [[{ "node": "Escolheu Departamento Válido?", "type": "main", "index": 0 }]]
+    },
+    "Escolheu Departamento Válido?": {
       "main": [
-        [{ "node": "Buscar Departamentos", "type": "main", "index": 0 }],
-        [{ "node": "Enviar Menu", "type": "main", "index": 0 }]
+        [{ "node": "Criar Conversa", "type": "main", "index": 0 }],
+        [{ "node": "Montar Menu", "type": "main", "index": 0 }]
       ]
     },
-    "Buscar Departamentos": {
-      "main": [[{ "node": "Mapear Departamento", "type": "main", "index": 0 }]]
-    },
-    "Mapear Departamento": {
-      "main": [[{ "node": "Criar Conversa", "type": "main", "index": 0 }]]
+    "Montar Menu": {
+      "main": [[{ "node": "Enviar Menu", "type": "main", "index": 0 }]]
     },
     "Criar Conversa": {
       "main": [[{ "node": "Montar Confirmação", "type": "main", "index": 0 }]]
