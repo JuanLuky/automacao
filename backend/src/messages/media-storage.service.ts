@@ -16,6 +16,8 @@ const EXTENSAO_POR_MIMETYPE: Record<string, string> = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
   'application/vnd.ms-excel': 'xls',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'video/mp4': 'mp4',
+  'video/3gpp': '3gp',
 };
 
 const MIMETYPES_POR_TIPO: Record<string, string[]> = {
@@ -33,6 +35,10 @@ const MIMETYPES_POR_TIPO: Record<string, string[]> = {
     'application/vnd.ms-excel',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   ],
+  // Mesmos dois formatos que a Evolution API/WhatsApp usam na prática —
+  // mp4 é o que o app do WhatsApp grava, 3gpp aparece em vídeos vindos de
+  // aparelhos mais antigos/Android.
+  [MessageTipo.VIDEO]: ['video/mp4', 'video/3gpp'],
 };
 
 const TAMANHO_MAXIMO_BYTES = 15 * 1024 * 1024; // 15MB decodificado

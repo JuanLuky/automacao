@@ -40,7 +40,7 @@ export class EvolutionService {
     instance: string,
     telefone: string,
     opcoes: {
-      mediatype: 'image' | 'document';
+      mediatype: 'image' | 'document' | 'video';
       mimetype: string;
       caption?: string;
       fileName?: string;

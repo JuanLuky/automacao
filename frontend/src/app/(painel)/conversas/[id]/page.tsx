@@ -59,9 +59,11 @@ const MIME_PARA_TIPO: Record<string, MessageTipo> = {
   "application/vnd.ms-excel": "documento",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
     "documento",
+  "video/mp4": "video",
+  "video/3gpp": "video",
 };
 const TAMANHO_MAXIMO_BYTES = 15 * 1024 * 1024;
-const LEGENDAS_PADRAO = ["[imagem]", "[áudio]", "[documento]"];
+const LEGENDAS_PADRAO = ["[imagem]", "[áudio]", "[documento]", "[vídeo]"];
 
 interface AnexoStaged {
   tipo: MessageTipo;
@@ -485,7 +487,7 @@ export default function ConversaPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx"
+          accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,video/mp4,video/3gpp"
           onChange={handleSelecionarArquivo}
           disabled={!podeResponder}
           className="hidden"

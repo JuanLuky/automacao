@@ -6,7 +6,7 @@ export type ConversationStatus =
 
 export type MessageOrigin = "cliente" | "atendente" | "sistema";
 
-export type MessageTipo = "texto" | "imagem" | "audio" | "documento";
+export type MessageTipo = "texto" | "imagem" | "audio" | "documento" | "video";
 
 export type UserRole = "admin" | "atendente";
 

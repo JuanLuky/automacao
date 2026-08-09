@@ -78,6 +78,14 @@ export function MediaMessage({ message }: MediaMessageProps) {
     );
   }
 
+  if (message.tipo === "video") {
+    return (
+      <video controls className="max-h-64 max-w-[280px] rounded-lg">
+        <source src={url} type={message.midia_mimetype ?? undefined} />
+      </video>
+    );
+  }
+
   // documento
   return (
     <a

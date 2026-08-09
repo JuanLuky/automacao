@@ -20,6 +20,7 @@ export enum MessageTipo {
   IMAGEM = 'imagem',
   AUDIO = 'audio',
   DOCUMENTO = 'documento',
+  VIDEO = 'video',
 }
 
 @Entity('messages')

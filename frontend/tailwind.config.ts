@@ -2,11 +2,11 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   darkMode: "class",
-  content: [
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/hooks/**/*.{js,ts,jsx,tsx,mdx}",
-  ],
+  // Um único glob cobrindo todo src/ (não mais uma pasta por vez) — evita repetir
+  // o bug de 2026-07-29, onde src/hooks/ ficou de fora do scan e o toast de
+  // notificação renderizava sem nenhum estilo. Qualquer pasta nova (lib/, types/
+  // etc.) que passe a ter JSX/className já entra automaticamente.
+  content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {
       colors: {

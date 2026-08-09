@@ -12,12 +12,38 @@ import { CreateMessageDto } from "./dto/create-message.dto";
 import { EventsGateway } from "../websocket/events.gateway";
 import { EvolutionService } from "../integrations/evolution/evolution.service";
 import { MediaStorageService } from "./media-storage.service";
+import { User } from "../users/entities/user.entity";
 
 const LEGENDA_PADRAO_POR_TIPO: Record<string, string> = {
   [MessageTipo.IMAGEM]: "[imagem]",
   [MessageTipo.AUDIO]: "[áudio]",
   [MessageTipo.DOCUMENTO]: "[documento]",
+  [MessageTipo.VIDEO]: "[vídeo]",
 };
+
+const MEDIATYPE_EVOLUTION_POR_TIPO: Record<string, "image" | "document" | "video"> = {
+  [MessageTipo.IMAGEM]: "image",
+  [MessageTipo.DOCUMENTO]: "document",
+  [MessageTipo.VIDEO]: "video",
+};
+
+type MessageSemSenha = Omit<Message, "atendente"> & {
+  atendente?: Omit<User, "senha_hash"> | null;
+};
+
+// Mesmo padrão de UsersService: nunca deixar senha_hash sair na resposta
+// HTTP nem no payload do evento de socket.
+function semSenha(atendente: User): Omit<User, "senha_hash">;
+function semSenha(atendente: User | null): Omit<User, "senha_hash"> | null;
+function semSenha(
+  atendente: User | null | undefined,
+): Omit<User, "senha_hash"> | null | undefined {
+  if (!atendente) {
+    return atendente;
+  }
+  const { senha_hash: _senha_hash, ...resto } = atendente;
+  return resto;
+}
 
 @Injectable()
 export class MessagesService {
@@ -31,12 +57,16 @@ export class MessagesService {
     private readonly mediaStorage: MediaStorageService,
   ) {}
 
-  findByConversation(conversationId: string): Promise<Message[]> {
-    return this.messagesRepository.find({
+  async findByConversation(conversationId: string): Promise<MessageSemSenha[]> {
+    const mensagens = await this.messagesRepository.find({
       where: { conversation_id: conversationId },
       order: { criado_em: "ASC" },
       relations: ["atendente", "atendente.departamento"],
     });
+    return mensagens.map((mensagem) => ({
+      ...mensagem,
+      atendente: semSenha(mensagem.atendente),
+    }));
   }
 
   async getMedia(
@@ -61,7 +91,7 @@ export class MessagesService {
   async create(
     conversationId: string,
     dto: CreateMessageDto,
-  ): Promise<Message> {
+  ): Promise<MessageSemSenha> {
     const conversa = await this.conversationsRepository.findOne({
       where: { id: conversationId },
       relations: ["atendente", "atendente.departamento"],
@@ -170,7 +200,7 @@ export class MessagesService {
         dto.midia_mimetype
       ) {
         await this.evolutionService.enviarMidia(dto.instance, conversa.telefone, {
-          mediatype: tipo === MessageTipo.IMAGEM ? "image" : "document",
+          mediatype: MEDIATYPE_EVOLUTION_POR_TIPO[tipo] ?? "document",
           mimetype: dto.midia_mimetype,
           caption: textoWhatsapp,
           fileName: dto.midia_nome_arquivo,
@@ -190,12 +220,14 @@ export class MessagesService {
     // ("Nova mensagem de Fulano") e decidir de quem é a conversa sem precisar
     // buscar isso separadamente. midia_path fica de fora — é implementação
     // interna do storage; o frontend busca o arquivo pelo endpoint dedicado.
-    const { midia_path: _midiaPath, ...mensagemSemPath } = mensagem;
+    const { midia_path: _midiaPath, atendente, ...mensagemSemPath } = mensagem;
+    const atendenteSemSenha = semSenha(atendente);
     this.eventsGateway.emitNovaMensagem({
       ...mensagemSemPath,
+      atendente: atendenteSemSenha,
       cliente_nome: conversa.cliente_nome,
       conversa_atendente_id: conversa.atendente_id,
     });
-    return mensagem;
+    return { ...mensagem, atendente: atendenteSemSenha };
   }
 }
