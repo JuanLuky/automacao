@@ -17,7 +17,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.item.json.body ?? $input.item.json;\nconst event = body.event;\nconst data = body.data;\n\nif (event !== 'messages.upsert') {\n  return [];\n}\nif (!data || !data.key) {\n  return [];\n}\nif (data.key.fromMe) {\n  return [];\n}\n\nconst remoteJid = data.key.remoteJid || '';\nconst telefone = remoteJid.split('@')[0];\nconst nome = data.pushName || 'Cliente';\n\n// Tipo de mídia detectado pela presença do campo correspondente em\n// data.message — o texto/legenda de cada tipo vem de onde a Evolution\n// API já coloca (conversation/extendedTextMessage para texto puro,\n// caption para imagem/vídeo/documento). O conteúdo do arquivo em si\n// (base64) só é buscado depois, via node \"Buscar Mídia\", usando\n// midia_message_id.\nconst msg = data.message || {};\nlet tipo = 'texto';\nlet texto = msg.conversation || msg.extendedTextMessage?.text || '';\n\nif (msg.imageMessage) {\n  tipo = 'imagem';\n  texto = msg.imageMessage.caption || '';\n} else if (msg.audioMessage) {\n  tipo = 'audio';\n  texto = '';\n} else if (msg.documentMessage) {\n  tipo = 'documento';\n  texto = msg.documentMessage.caption || '';\n} else if (msg.videoMessage) {\n  tipo = 'video';\n  texto = msg.videoMessage.caption || '';\n}\n\nreturn [\n  {\n    json: {\n      telefone,\n      nome,\n      texto: texto.trim(),\n      instance: body.instance,\n      tipo,\n      midia_message_id: tipo !== 'texto' ? data.key.id : null,\n    },\n  },\n];\n"
+        "jsCode": "const body = $input.item.json.body ?? $input.item.json;\nconst event = body.event;\nconst data = body.data;\n\nif (event !== 'messages.upsert') {\n  return [];\n}\nif (!data || !data.key) {\n  return [];\n}\nif (data.key.fromMe) {\n  return [];\n}\n\nconst remoteJid = data.key.remoteJid || '';\n// Grupo do WhatsApp tem remoteJid terminando em \"@g.us\" (contato\n// individual termina em \"@s.whatsapp.net\"). Em grupo, \"telefone\" guarda o\n// JID inteiro (não só os dígitos) — é o identificador usado tanto pra\n// achar/criar a conversa (GET .../by-phone) quanto pro campo \"number\" ao\n// responder via Evolution API, que exige o JID completo pra mandar\n// mensagem num grupo (não existe \"número\" de grupo). O nome do grupo não\n// é buscado aqui (exigiria uma chamada extra à Evolution API) — aparece\n// como \"Grupo sem nome\" no painel.\nconst ehGrupo = remoteJid.endsWith('@g.us');\nconst telefone = ehGrupo ? remoteJid : remoteJid.split('@')[0];\nconst nome = ehGrupo ? null : (data.pushName || 'Cliente');\n\n// Tipo de mídia detectado pela presença do campo correspondente em\n// data.message — o texto/legenda de cada tipo vem de onde a Evolution\n// API já coloca (conversation/extendedTextMessage para texto puro,\n// caption para imagem/vídeo/documento). O conteúdo do arquivo em si\n// (base64) só é buscado depois, via node \"Buscar Mídia\", usando\n// midia_message_id.\nconst msg = data.message || {};\nlet tipo = 'texto';\nlet texto = msg.conversation || msg.extendedTextMessage?.text || '';\n\nif (msg.imageMessage) {\n  tipo = 'imagem';\n  texto = msg.imageMessage.caption || '';\n} else if (msg.audioMessage) {\n  tipo = 'audio';\n  texto = '';\n} else if (msg.documentMessage) {\n  tipo = 'documento';\n  texto = msg.documentMessage.caption || '';\n} else if (msg.videoMessage) {\n  tipo = 'video';\n  texto = msg.videoMessage.caption || '';\n}\n\nreturn [\n  {\n    json: {\n      telefone,\n      nome,\n      texto: texto.trim(),\n      instance: body.instance,\n      tipo,\n      midia_message_id: tipo !== 'texto' ? data.key.id : null,\n      eh_grupo: ehGrupo,\n    },\n  },\n];\n"
       },
       "name": "Extrair Dados da Mensagem",
       "type": "n8n-nodes-base.code",
@@ -93,7 +93,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\nconst conversa = $('Verificar Conversa Ativa').item.json;\nconst resultado = $json; // resposta de \"Buscar Mídia\": mediaType, fileName, size, mimetype, base64\n\nreturn [\n  {\n    json: {\n      conversation_id: conversa.id,\n      mensagem: original.texto,\n      tipo: original.tipo,\n      midia_base64: resultado.base64,\n      midia_mimetype: resultado.mimetype,\n      midia_nome_arquivo: resultado.fileName || null,\n    },\n  },\n];\n"
+        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\nconst conversa = $('Definir Conversa Atual').item.json;\nconst resultado = $json; // resposta de \"Buscar Mídia\": mediaType, fileName, size, mimetype, base64\n\nreturn [\n  {\n    json: {\n      conversation_id: conversa.id,\n      mensagem: original.texto,\n      tipo: original.tipo,\n      midia_base64: resultado.base64,\n      midia_mimetype: resultado.mimetype,\n      midia_nome_arquivo: resultado.fileName || null,\n    },\n  },\n];\n"
       },
       "name": "Montar Mensagem de Mídia",
       "type": "n8n-nodes-base.code",
@@ -119,6 +119,58 @@
       "typeVersion": 4.2,
       "position": [1520, 200],
       "id": "node-register-message"
+    },
+
+    {
+      "parameters": {
+        "jsCode": "// Ponto único de referência pra \"qual é a conversa atual\" — alimentado\n// tanto por \"Verificar Conversa Ativa\" (conversa já existia, cliente ou\n// grupo) quanto por \"Criar Conversa de Grupo\" (grupo novo, primeira\n// mensagem). \"Montar Mensagem de Mídia\" referencia só este node, sem\n// precisar saber qual dos dois caminhos gerou o item.\nreturn [{ json: $json }];\n"
+      },
+      "name": "Definir Conversa Atual",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 300],
+      "id": "node-define-current-conversation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-eh-grupo",
+              "leftValue": "={{ $('Extrair Dados da Mensagem').item.json.eh_grupo }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "É Mensagem de Grupo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [860, 780],
+      "id": "node-if-grupo"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"telefone\": $('Extrair Dados da Mensagem').item.json.telefone, \"tipo\": \"grupo\" } }}",
+        "options": {}
+      },
+      "name": "Criar Conversa de Grupo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1080, 780],
+      "id": "node-create-group-conversation"
     },
 
     {
@@ -606,9 +658,21 @@
     },
     "Verificar Conversa Ativa": {
       "main": [
-        [{ "node": "É Mensagem de Mídia?", "type": "main", "index": 0 }],
+        [{ "node": "Definir Conversa Atual", "type": "main", "index": 0 }],
+        [{ "node": "É Mensagem de Grupo?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Definir Conversa Atual": {
+      "main": [[{ "node": "É Mensagem de Mídia?", "type": "main", "index": 0 }]]
+    },
+    "É Mensagem de Grupo?": {
+      "main": [
+        [{ "node": "Criar Conversa de Grupo", "type": "main", "index": 0 }],
         [{ "node": "Redis - Buscar Buffer Atual", "type": "main", "index": 0 }]
       ]
+    },
+    "Criar Conversa de Grupo": {
+      "main": [[{ "node": "Definir Conversa Atual", "type": "main", "index": 0 }]]
     },
     "É Mensagem de Mídia?": {
       "main": [

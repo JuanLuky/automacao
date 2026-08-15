@@ -8,6 +8,7 @@ import { Repository } from "typeorm";
 import { randomUUID } from "crypto";
 import { Message, MessageOrigin, MessageTipo } from "./entities/message.entity";
 import { Conversation } from "../conversations/entities/conversation.entity";
+import { ConversationTipo } from "../conversations/enums/conversation-tipo.enum";
 import { CreateMessageDto } from "./dto/create-message.dto";
 import { EventsGateway } from "../websocket/events.gateway";
 import { EvolutionService } from "../integrations/evolution/evolution.service";
@@ -52,6 +53,8 @@ export class MessagesService {
     private readonly messagesRepository: Repository<Message>,
     @InjectRepository(Conversation)
     private readonly conversationsRepository: Repository<Conversation>,
+    @InjectRepository(User)
+    private readonly usersRepository: Repository<User>,
     private readonly eventsGateway: EventsGateway,
     private readonly evolutionService: EvolutionService,
     private readonly mediaStorage: MediaStorageService,
@@ -110,6 +113,32 @@ export class MessagesService {
       );
     }
 
+    // Quem está "respondendo agora": pra conversa de cliente é sempre quem
+    // está com ela assumida (não existe seleção de atendente no payload —
+    // rota também é chamada pelo n8n, sem noção de usuário logado). Grupo
+    // não tem "assumir", então não tem um atendente_id na conversa — quem
+    // está respondendo precisa vir explícito no payload (o painel manda o
+    // id do usuário logado, ver conversas/[id]/page.tsx).
+    let remetente: User | null = null;
+    if (dto.origem === MessageOrigin.ATENDENTE) {
+      if (conversa.tipo === ConversationTipo.GRUPO) {
+        if (!dto.atendente_id) {
+          throw new BadRequestException(
+            'Campo "atendente_id" é obrigatório para responder um grupo.',
+          );
+        }
+        remetente = await this.usersRepository.findOne({
+          where: { id: dto.atendente_id },
+          relations: ["departamento"],
+        });
+        if (!remetente) {
+          throw new NotFoundException("Atendente informado não encontrado.");
+        }
+      } else {
+        remetente = conversa.atendente ?? null;
+      }
+    }
+
     // Gerado por nós (em vez de deixar o Postgres gerar) porque o nome do
     // arquivo em disco precisa bater com o id da própria mensagem — ver
     // MediaStorageService.
@@ -143,18 +172,14 @@ export class MessagesService {
         midia_path: midiaPath,
         midia_mimetype: midiaPath ? dto.midia_mimetype ?? null : null,
         midia_nome_arquivo: midiaPath ? dto.midia_nome_arquivo ?? null : null,
-        // O responsável é sempre quem está com a conversa assumida agora —
-        // não existe seleção de atendente no payload (rota também é
-        // chamada pelo n8n, sem noção de usuário logado).
-        atendente_id:
-          dto.origem === MessageOrigin.ATENDENTE ? conversa.atendente_id : null,
+        atendente_id: remetente ? remetente.id : null,
       }),
     );
 
     // save() não retorna a relação carregada — anexa em memória pra ir
     // completa no evento de socket e na resposta HTTP.
-    if (dto.origem === MessageOrigin.ATENDENTE) {
-      mensagem.atendente = conversa.atendente;
+    if (remetente) {
+      mensagem.atendente = remetente;
     }
 
     // Só dispara envio real ao WhatsApp quando é o atendente respondendo.
@@ -182,11 +207,9 @@ export class MessagesService {
           .join(" ");
       };
 
-      const assinatura = conversa.atendente
-        ? `*${formatarNome(conversa.atendente.nome)}${
-            conversa.atendente.departamento
-              ? ` - ${conversa.atendente.departamento.nome}:`
-              : ":"
+      const assinatura = remetente
+        ? `*${formatarNome(remetente.nome)}${
+            remetente.departamento ? ` - ${remetente.departamento.nome}:` : ":"
           }*`
         : null;
 

@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { MessageOrigin, MessageTipo } from '../entities/message.entity';
 
 export class CreateMessageDto {
@@ -13,6 +13,15 @@ export class CreateMessageDto {
   @IsOptional()
   @IsString()
   instance?: string;
+
+  // Só usado quando origem = atendente E a conversa é de grupo (ver
+  // MessagesService.create): grupo não tem "atendente da conversa" (não
+  // existe assumir), então quem está respondendo precisa vir explícito no
+  // payload — o painel manda o id do usuário logado. Ignorado para
+  // conversa de cliente, que continua derivando de conversa.atendente_id.
+  @IsOptional()
+  @IsUUID()
+  atendente_id?: string;
 
   // Ausente/'texto' = mensagem de texto comum (comportamento de sempre).
   // Os três campos de mídia abaixo só fazem sentido quando tipo != 'texto'

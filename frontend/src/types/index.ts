@@ -4,6 +4,8 @@ export type ConversationStatus =
   | "transferido"
   | "finalizado";
 
+export type ConversationTipo = "cliente" | "grupo";
+
 export type MessageOrigin = "cliente" | "atendente" | "sistema";
 
 export type MessageTipo = "texto" | "imagem" | "audio" | "documento" | "video";
@@ -50,9 +52,11 @@ export interface Conversation {
   id: string;
   telefone: string;
   cliente_nome: string | null;
+  // "grupo" não tem fila/status/setor — ver "Grupos" no CLAUDE.md.
+  tipo: ConversationTipo;
   status: ConversationStatus;
-  departamento_id: string;
-  departamento?: Department;
+  departamento_id: string | null;
+  departamento?: Department | null;
   atendente_id: string | null;
   atendente?: User;
   criado_em: string;
@@ -116,6 +120,10 @@ export interface SendMessagePayload {
   midia_base64?: string;
   midia_mimetype?: string;
   midia_nome_arquivo?: string;
+  // Obrigatório só ao responder um grupo (tipo = grupo não tem "assumir",
+  // então o backend não sabe quem está respondendo sem isso) — ver
+  // conversas/[id]/page.tsx.
+  atendente_id?: string;
 }
 
 /** Erro normalizado para exibição na interface. */

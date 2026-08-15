@@ -16,6 +16,7 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   Loader2,
+  MessagesSquare,
   Paperclip,
   Phone,
   Send,
@@ -154,6 +155,9 @@ export default function ConversaPage() {
         origem: "atendente",
         mensagem,
         instance: EVOLUTION_INSTANCE,
+        // Grupo não tem "assumir" — o backend precisa saber quem está
+        // respondendo pra assinar a mensagem (ver MessagesService.create).
+        ...(conversa?.tipo === "grupo" && { atendente_id: user?.id }),
         ...(anexo && {
           tipo: anexo.tipo,
           midia_base64: anexo.base64,
@@ -267,7 +271,10 @@ export default function ConversaPage() {
     );
   }
 
-  const podeResponder = conversa.status === "em_atendimento";
+  // Grupo não tem status/fila (ver "Grupos" no CLAUDE.md) — está sempre
+  // aberto a responder, por qualquer atendente de qualquer setor.
+  const podeResponder =
+    conversa.tipo === "grupo" || conversa.status === "em_atendimento";
 
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col">
@@ -285,7 +292,8 @@ export default function ConversaPage() {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-display text-lg font-semibold text-primary">
-                {conversa.cliente_nome || "Cliente sem nome"}
+                {conversa.cliente_nome ||
+                  (conversa.tipo === "grupo" ? "Grupo sem nome" : "Cliente sem nome")}
               </h1>
               {conversa.departamento && (
                 <span className="text-eyebrow font-semibold uppercase text-tide-400">
@@ -295,8 +303,14 @@ export default function ConversaPage() {
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem] text-secondary">
               <span className="flex items-center gap-1">
-                <Phone size={13} />
-                {conversa.telefone}
+                {conversa.tipo === "grupo" ? (
+                  <MessagesSquare size={13} />
+                ) : (
+                  <Phone size={13} />
+                )}
+                {conversa.tipo === "grupo"
+                  ? conversa.telefone.split("@")[0]
+                  : conversa.telefone}
               </span>
               {conversa.atendente && (
                 <span className="flex items-center gap-1">
@@ -304,12 +318,14 @@ export default function ConversaPage() {
                   {conversa.atendente.nome}
                 </span>
               )}
-              <StatusBadge status={conversa.status} />
+              {conversa.tipo === "cliente" && (
+                <StatusBadge status={conversa.status} />
+              )}
             </div>
           </div>
         </div>
 
-        {conversa.status !== "finalizado" && (
+        {conversa.tipo === "cliente" && conversa.status !== "finalizado" && (
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"

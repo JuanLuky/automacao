@@ -13,6 +13,7 @@ import { ConversationsService } from './conversations.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { ConversationStatus } from './enums/conversation-status.enum';
+import { ConversationTipo } from './enums/conversation-tipo.enum';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('conversations')
@@ -30,6 +31,7 @@ export class ConversationsController {
     @Query('data_fim') data_fim?: string,
     @Query('pagina') pagina?: string,
     @Query('por_pagina') por_pagina?: string,
+    @Query('tipo') tipo?: ConversationTipo,
   ) {
     return this.conversationsService.findAll({
       status,
@@ -39,7 +41,16 @@ export class ConversationsController {
       data_fim,
       pagina: pagina ? parseInt(pagina, 10) : undefined,
       por_pagina: por_pagina ? parseInt(por_pagina, 10) : undefined,
+      tipo,
     });
+  }
+
+  // Busca uma única conversa por id — usada pela tela de chat (cliente ou
+  // grupo). Ver ConversationsService.buscarPorId.
+  @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  buscarPorId(@Param('id') id: string) {
+    return this.conversationsService.buscarPorId(id);
   }
 
   // Rota usada pelo n8n para checar se já existe conversa em aberto.

@@ -5,6 +5,7 @@ import type {
   Conversation,
   ConversationsPaginado,
   ConversationStatus,
+  ConversationTipo,
   CreateDepartmentPayload,
   CreateStatusUpdatePayload,
   CreateUserPayload,
@@ -161,6 +162,7 @@ export async function getConversations(filtros: {
   busca?: string;
   data_inicio?: string;
   data_fim?: string;
+  tipo?: ConversationTipo;
 }): Promise<Conversation[]> {
   const { data } = await api.get<Conversation[]>("/conversations", {
     params: filtros,
@@ -168,7 +170,7 @@ export async function getConversations(filtros: {
   return data;
 }
 
-/** Igual a getConversations, mas paginado — usado pelas abas da fila (10 por página). */
+/** Igual a getConversations, mas paginado — usado pelas abas da fila e por /grupos. */
 export async function getConversationsPaginado(filtros: {
   status?: ConversationStatus;
   departamento_id?: string;
@@ -177,6 +179,7 @@ export async function getConversationsPaginado(filtros: {
   data_fim?: string;
   pagina: number;
   por_pagina: number;
+  tipo?: ConversationTipo;
 }): Promise<ConversationsPaginado> {
   const { data } = await api.get<ConversationsPaginado>("/conversations", {
     params: filtros,
@@ -184,10 +187,14 @@ export async function getConversationsPaginado(filtros: {
   return data;
 }
 
-/** Não existe GET /conversations/:id — busca na lista completa. */
 export async function getConversation(id: string): Promise<Conversation | null> {
-  const conversas = await getConversations({});
-  return conversas.find((c) => c.id === id) ?? null;
+  try {
+    const { data } = await api.get<Conversation>(`/conversations/${id}`);
+    return data;
+  } catch (error) {
+    if ((error as AxiosError).response?.status === 404) return null;
+    throw error;
+  }
 }
 
 export async function assumeConversation(id: string): Promise<Conversation> {

@@ -14,6 +14,7 @@ import {
   Moon,
   QrCode,
   Sun,
+  Users,
   UserPlus,
   Waves,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import { NotificationsProvider } from "@/hooks/useNotifications";
 
 const NAV = [
   { href: "/fila", label: "Fila", icon: ListChecks },
+  { href: "/grupos", label: "Grupos", icon: Users },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 ];
 

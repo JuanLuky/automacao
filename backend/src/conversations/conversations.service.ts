@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Conversation } from './entities/conversation.entity';
 import { ConversationStatus } from './enums/conversation-status.enum';
+import { ConversationTipo } from './enums/conversation-tipo.enum';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { Message, MessageOrigin } from '../messages/entities/message.entity';
@@ -45,12 +46,20 @@ export class ConversationsService {
     data_fim?: string;
     pagina?: number;
     por_pagina?: number;
+    tipo?: ConversationTipo;
   }) {
     const qb = this.conversationsRepository
       .createQueryBuilder('conversation')
       .leftJoinAndSelect('conversation.departamento', 'departamento')
       .leftJoinAndSelect('conversation.atendente', 'atendente')
       .orderBy('conversation.criado_em', 'ASC');
+
+    // Sem "tipo" explícito, mantém o comportamento de sempre (só cliente) —
+    // preserva a fila/dashboard existentes sem precisar tocar em cada
+    // chamada. A tela /grupos passa tipo=grupo explicitamente.
+    qb.andWhere('conversation.tipo = :tipo', {
+      tipo: filtros.tipo ?? ConversationTipo.CLIENTE,
+    });
 
     if (filtros.status) {
       qb.andWhere('conversation.status = :status', { status: filtros.status });
@@ -126,10 +135,14 @@ export class ConversationsService {
   }
 
   async create(dto: CreateConversationDto): Promise<Conversation> {
+    const tipo = dto.tipo ?? ConversationTipo.CLIENTE;
     const conversa = this.conversationsRepository.create({
       telefone: dto.telefone,
       cliente_nome: dto.cliente_nome,
-      departamento_id: dto.departamento_id,
+      tipo,
+      // Grupo não tem setor — mesmo que venha algo no DTO, ignora (só
+      // tipo = cliente usa departamento_id; ver CreateConversationDto).
+      departamento_id: tipo === ConversationTipo.GRUPO ? null : dto.departamento_id,
       status: ConversationStatus.AGUARDANDO,
     });
 
@@ -149,8 +162,16 @@ export class ConversationsService {
     return salva;
   }
 
+  // Usada pela tela de chat (não existe GET /conversations/:id — só a lista
+  // paginada — este método serve um único registro por id, tanto cliente
+  // quanto grupo).
+  async buscarPorId(id: string): Promise<Conversation> {
+    return this.buscarOuFalhar(id);
+  }
+
   async assumir(id: string, atendenteId: string): Promise<Conversation> {
     const conversa = await this.buscarOuFalhar(id);
+    this.recusarSeGrupo(conversa, 'assumir');
 
     if (conversa.status !== ConversationStatus.AGUARDANDO) {
       throw new BadRequestException(
@@ -171,6 +192,7 @@ export class ConversationsService {
     dto: TransferConversationDto,
   ): Promise<Conversation> {
     const conversa = await this.buscarOuFalhar(id);
+    this.recusarSeGrupo(conversa, 'transferir');
 
     if (conversa.status === ConversationStatus.FINALIZADO) {
       throw new BadRequestException(
@@ -200,6 +222,7 @@ export class ConversationsService {
 
   async finalizar(id: string): Promise<Conversation> {
     const conversa = await this.buscarOuFalhar(id);
+    this.recusarSeGrupo(conversa, 'finalizar');
 
     conversa.status = ConversationStatus.FINALIZADO;
     conversa.finalizado_em = new Date();
@@ -207,6 +230,14 @@ export class ConversationsService {
     const atualizada = await this.conversationsRepository.save(conversa);
     this.eventsGateway.emitConversaFinalizada(atualizada);
     return atualizada;
+  }
+
+  // Grupo não tem fila/status (ver "Grupos" no frontend) — assumir,
+  // transferir e finalizar são conceitos só de conversa com cliente.
+  private recusarSeGrupo(conversa: Conversation, acao: string): void {
+    if (conversa.tipo === ConversationTipo.GRUPO) {
+      throw new BadRequestException(`Não é possível ${acao} uma conversa de grupo.`);
+    }
   }
 
   private async buscarOuFalhar(id: string): Promise<Conversation> {
