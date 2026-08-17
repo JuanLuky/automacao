@@ -9,8 +9,14 @@ const EXTENSAO_POR_MIMETYPE: Record<string, string> = {
   'image/webp': 'webp',
   'audio/ogg': 'ogg',
   'audio/ogg; codecs=opus': 'ogg',
+  'audio/ogg;codecs=opus': 'ogg',
   'audio/mpeg': 'mp3',
   'audio/mp4': 'm4a',
+  // MediaRecorder do navegador (gravação por microfone) não produz ogg no
+  // Chrome/Edge — só webm. Ver conversas/[id]/page.tsx, pickMimeType().
+  'audio/webm': 'webm',
+  'audio/webm; codecs=opus': 'webm',
+  'audio/webm;codecs=opus': 'webm',
   'application/pdf': 'pdf',
   'application/msword': 'doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
@@ -25,8 +31,12 @@ const MIMETYPES_POR_TIPO: Record<string, string[]> = {
   [MessageTipo.AUDIO]: [
     'audio/ogg',
     'audio/ogg; codecs=opus',
+    'audio/ogg;codecs=opus',
     'audio/mpeg',
     'audio/mp4',
+    'audio/webm',
+    'audio/webm; codecs=opus',
+    'audio/webm;codecs=opus',
   ],
   [MessageTipo.DOCUMENTO]: [
     'application/pdf',

@@ -16,10 +16,12 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   Loader2,
+  Mic,
   MessagesSquare,
   Paperclip,
   Phone,
   Send,
+  Square,
   User as UserIcon,
   X,
 } from "lucide-react";
@@ -65,6 +67,7 @@ const MIME_PARA_TIPO: Record<string, MessageTipo> = {
   "audio/ogg": "audio",
   "audio/mpeg": "audio",
   "audio/mp4": "audio",
+  "audio/webm": "audio",
 };
 const TAMANHO_MAXIMO_BYTES = 15 * 1024 * 1024;
 const LEGENDAS_PADRAO = ["[imagem]", "[áudio]", "[documento]", "[vídeo]"];
@@ -74,6 +77,34 @@ interface AnexoStaged {
   base64: string;
   mimetype: string;
   nomeArquivo: string;
+}
+
+// Firefox grava MediaRecorder em ogg/opus nativamente; Chrome/Edge só
+// suportam webm — por isso a ordem de preferência (ver MediaStorageService
+// no backend, que aceita os dois). Se nenhum dos dois for suportado, deixa
+// o navegador escolher (new MediaRecorder(stream) sem mimeType).
+const MIME_TYPES_GRAVACAO = [
+  "audio/ogg;codecs=opus",
+  "audio/webm;codecs=opus",
+  "audio/webm",
+];
+
+function escolherMimeTypeGravacao(): string {
+  if (typeof MediaRecorder === "undefined") return "";
+  return MIME_TYPES_GRAVACAO.find((tipo) => MediaRecorder.isTypeSupported(tipo)) ?? "";
+}
+
+function extensaoPorMimetype(mimetype: string): string {
+  if (mimetype.includes("ogg")) return "ogg";
+  if (mimetype.includes("webm")) return "webm";
+  if (mimetype.includes("mp4")) return "m4a";
+  return "webm";
+}
+
+function formatarDuracao(segundos: number): string {
+  const m = Math.floor(segundos / 60).toString().padStart(2, "0");
+  const s = (segundos % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
 }
 
 export default function ConversaPage() {
@@ -92,6 +123,14 @@ export default function ConversaPage() {
   const [enviando, setEnviando] = useState(false);
   const [anexo, setAnexo] = useState<AnexoStaged | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [gravando, setGravando] = useState(false);
+  const [duracaoGravacao, setDuracaoGravacao] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksGravacaoRef = useRef<Blob[]>([]);
+  const streamGravacaoRef = useRef<MediaStream | null>(null);
+  const timerGravacaoRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [finalizando, setFinalizando] = useState(false);
   const [confirmandoFinalizar, setConfirmandoFinalizar] = useState(false);
 
@@ -130,6 +169,16 @@ export default function ConversaPage() {
       behavior: "smooth",
     });
   }, [mensagens.length]);
+
+  // Some enquanto o usuário está numa gravação — solta o microfone e o
+  // timer se o componente desmontar no meio (ex: navegou pra outra
+  // conversa sem parar a gravação).
+  useEffect(() => {
+    return () => {
+      if (timerGravacaoRef.current) clearInterval(timerGravacaoRef.current);
+      streamGravacaoRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
 
   useSocketEvent<Message>("nova_mensagem", (mensagem) => {
     if (mensagem.conversation_id !== id) return;
@@ -201,6 +250,73 @@ export default function ConversaPage() {
     };
     reader.onerror = () => setErro("Não foi possível ler o arquivo selecionado.");
     reader.readAsDataURL(file);
+  }
+
+  async function iniciarGravacao() {
+    setErro(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamGravacaoRef.current = stream;
+
+      const mimeType = escolherMimeTypeGravacao();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+      chunksGravacaoRef.current = [];
+
+      recorder.ondataavailable = (evento) => {
+        if (evento.data.size > 0) chunksGravacaoRef.current.push(evento.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksGravacaoRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
+        streamGravacaoRef.current?.getTracks().forEach((t) => t.stop());
+        streamGravacaoRef.current = null;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const resultado = reader.result as string;
+          const base64 = resultado.slice(resultado.indexOf(",") + 1);
+          setAnexo({
+            tipo: "audio",
+            base64,
+            mimetype: blob.type,
+            nomeArquivo: `gravacao-${Date.now()}.${extensaoPorMimetype(blob.type)}`,
+          });
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setGravando(true);
+      setDuracaoGravacao(0);
+      timerGravacaoRef.current = setInterval(() => {
+        setDuracaoGravacao((d) => d + 1);
+      }, 1000);
+    } catch {
+      setErro("Não foi possível acessar o microfone. Verifique a permissão do navegador.");
+    }
+  }
+
+  function pararGravacao() {
+    mediaRecorderRef.current?.stop();
+    setGravando(false);
+    if (timerGravacaoRef.current) clearInterval(timerGravacaoRef.current);
+  }
+
+  function cancelarGravacao() {
+    if (mediaRecorderRef.current) {
+      // Troca o handler antes de parar pra não gerar o anexo (onstop só
+      // deve montar o áudio quando o usuário para de propósito).
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+    }
+    streamGravacaoRef.current?.getTracks().forEach((t) => t.stop());
+    streamGravacaoRef.current = null;
+    setGravando(false);
+    if (timerGravacaoRef.current) clearInterval(timerGravacaoRef.current);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -501,8 +617,18 @@ export default function ConversaPage() {
 
       {anexo && (
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-app bg-sunken px-3 py-2 text-[0.8125rem] text-secondary">
-          <Paperclip size={14} className="shrink-0" />
-          <span className="truncate">{anexo.nomeArquivo}</span>
+          {anexo.tipo === "audio" ? (
+            <audio
+              controls
+              className="h-9 max-w-full flex-1"
+              src={`data:${anexo.mimetype};base64,${anexo.base64}`}
+            />
+          ) : (
+            <>
+              <Paperclip size={14} className="shrink-0" />
+              <span className="truncate">{anexo.nomeArquivo}</span>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setAnexo(null)}
@@ -516,45 +642,86 @@ export default function ConversaPage() {
 
       <form onSubmit={handleEnviar} className={`flex items-end gap-3 ${anexo ? "mt-2" : "mt-4"}`}>
         <QuickReplies
-          disabled={!podeResponder}
+          disabled={!podeResponder || gravando}
           onSelect={(template) =>
             setTexto(resolverTemplate(template, user?.nome ?? ""))
           }
         />
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,video/mp4,video/3gpp,audio/ogg,audio/mpeg,audio/mp4"
-          onChange={handleSelecionarArquivo}
-          disabled={!podeResponder}
-          className="hidden"
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={!podeResponder}
-          aria-label="Anexar arquivo"
-          className="rounded-xl border border-app p-3.5 text-secondary transition-colors hover:border-mist-500 hover:text-primary disabled:cursor-not-allowed disabled:opacity-55"
-        >
-          <Paperclip size={17} />
-        </button>
-        <textarea
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={!podeResponder || enviando}
-          placeholder={
-            podeResponder
-              ? "Escreva uma mensagem..."
-              : "Esta conversa não está mais em atendimento."
-          }
-          rows={1}
-          className="max-h-32 flex-1 resize-none rounded-xl border border-app bg-sunken px-4 py-3.5 text-[0.9375rem] text-primary placeholder:text-muted/60 focus:border-tide-500 focus:bg-raised focus:outline-none focus:ring-4 focus:ring-tide-500/12 disabled:cursor-not-allowed disabled:opacity-55"
-        />
+
+        {gravando ? (
+          <div className="flex flex-1 items-center gap-3 rounded-xl border border-alert/40 bg-alert/8 px-4 py-3.5">
+            <span
+              className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-alert"
+              aria-hidden="true"
+            />
+            <span className="text-[0.9375rem] text-primary">
+              Gravando áudio... {formatarDuracao(duracaoGravacao)}
+            </span>
+            <button
+              type="button"
+              onClick={cancelarGravacao}
+              aria-label="Cancelar gravação"
+              className="ml-auto rounded-lg p-2 text-muted transition-colors hover:text-primary"
+            >
+              <X size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={pararGravacao}
+              aria-label="Parar gravação"
+              className="rounded-lg bg-tide-500 p-2 text-abyss-900 transition-opacity hover:opacity-90"
+            >
+              <Square size={16} />
+            </button>
+          </div>
+        ) : (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,video/mp4,video/3gpp,audio/ogg,audio/mpeg,audio/mp4"
+              onChange={handleSelecionarArquivo}
+              disabled={!podeResponder}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!podeResponder}
+              aria-label="Anexar arquivo"
+              className="rounded-xl border border-app p-3.5 text-secondary transition-colors hover:border-mist-500 hover:text-primary disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              <Paperclip size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={iniciarGravacao}
+              disabled={!podeResponder}
+              aria-label="Gravar áudio"
+              className="rounded-xl border border-app p-3.5 text-secondary transition-colors hover:border-mist-500 hover:text-primary disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              <Mic size={17} />
+            </button>
+            <textarea
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={!podeResponder || enviando}
+              placeholder={
+                podeResponder
+                  ? "Escreva uma mensagem..."
+                  : "Esta conversa não está mais em atendimento."
+              }
+              rows={1}
+              className="max-h-32 flex-1 resize-none rounded-xl border border-app bg-sunken px-4 py-3.5 text-[0.9375rem] text-primary placeholder:text-muted/60 focus:border-tide-500 focus:bg-raised focus:outline-none focus:ring-4 focus:ring-tide-500/12 disabled:cursor-not-allowed disabled:opacity-55"
+            />
+          </>
+        )}
+
         <Button
           type="submit"
           loading={enviando}
-          disabled={!podeResponder || (!texto.trim() && !anexo)}
+          disabled={!podeResponder || gravando || (!texto.trim() && !anexo)}
           className="!px-4 !py-3.5"
         >
           <Send size={17} />
