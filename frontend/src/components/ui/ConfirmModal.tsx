@@ -16,6 +16,16 @@ interface ConfirmModalProps {
   loading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /**
+   * Ação alternativa opcional (ex: "Finalizar sem mensagem" ao lado de
+   * "Finalizar com mensagem") — quando presente, um terceiro botão
+   * aparece entre Cancelar e Confirmar. Tem loading próprio pra saber
+   * qual dos dois botões está em andamento; os dois ficam desabilitados
+   * enquanto qualquer um dos dois carrega.
+   */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
+  secondaryLoading?: boolean;
 }
 
 export function ConfirmModal({
@@ -28,17 +38,22 @@ export function ConfirmModal({
   loading = false,
   onConfirm,
   onCancel,
+  secondaryLabel,
+  onSecondary,
+  secondaryLoading = false,
 }: ConfirmModalProps) {
+  const emAndamento = loading || secondaryLoading;
+
   useEffect(() => {
     if (!open) return;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !loading) onCancel();
+      if (event.key === "Escape" && !emAndamento) onCancel();
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, loading, onCancel]);
+  }, [open, emAndamento, onCancel]);
 
   if (!open) return null;
 
@@ -48,7 +63,7 @@ export function ConfirmModal({
       aria-modal="true"
       aria-labelledby="confirm-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-abyss-900/60 p-4 backdrop-blur-sm"
-      onClick={() => !loading && onCancel()}
+      onClick={() => !emAndamento && onCancel()}
     >
       <div
         onClick={(event) => event.stopPropagation()}
@@ -75,22 +90,35 @@ export function ConfirmModal({
           </div>
         </div>
 
-        <div className="mt-6 flex justify-end gap-2.5">
+        <div className="mt-6 flex flex-wrap justify-end gap-2.5">
           <Button
             type="button"
             variant="ghost"
             className="!px-4 !py-2.5 text-[0.8125rem]"
             onClick={onCancel}
-            disabled={loading}
+            disabled={emAndamento}
           >
             {cancelLabel}
           </Button>
+          {secondaryLabel && onSecondary && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="!px-4 !py-2.5 text-[0.8125rem]"
+              loading={secondaryLoading}
+              disabled={loading}
+              onClick={onSecondary}
+            >
+              {secondaryLabel}
+            </Button>
+          )}
           <Button
             type="button"
             className={`!px-4 !py-2.5 text-[0.8125rem] ${
               variant === "danger" ? "!bg-alert hover:!bg-alert/90" : ""
             }`}
             loading={loading}
+            disabled={secondaryLoading}
             onClick={onConfirm}
           >
             {confirmLabel}

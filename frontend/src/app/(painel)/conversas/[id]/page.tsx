@@ -135,7 +135,10 @@ export default function ConversaPage() {
   const streamGravacaoRef = useRef<MediaStream | null>(null);
   const timerGravacaoRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [finalizando, setFinalizando] = useState(false);
+  // "modo" identifica qual dos dois botões do modal (com/sem mensagem)
+  // está em andamento, pro spinner aparecer no botão certo — mesmo padrão
+  // do modal de "Iniciar atendimento" na fila.
+  const [modoFinalizar, setModoFinalizar] = useState<"com_mensagem" | "sem_mensagem" | null>(null);
   const [confirmandoFinalizar, setConfirmandoFinalizar] = useState(false);
 
   const [transferindo, setTransferindo] = useState(false);
@@ -366,27 +369,29 @@ export default function ConversaPage() {
     }
   }
 
-  async function handleFinalizar() {
-    setFinalizando(true);
+  async function handleFinalizar(comMensagem: boolean) {
+    setModoFinalizar(comMensagem ? "com_mensagem" : "sem_mensagem");
     setErro(null);
     try {
-      // Best-effort: mesmo se o envio da mensagem de encerramento falhar
-      // (ex: WhatsApp fora do ar), a finalização segue — o atendente ainda
-      // quer poder encerrar o atendimento.
-      try {
-        await sendMessage(id, {
-          origem: "atendente",
-          mensagem: MENSAGEM_AUTOMATICA_FINALIZAR,
-          instance: EVOLUTION_INSTANCE,
-        });
-      } catch {
-        // ignora — não bloqueia a finalização
+      if (comMensagem) {
+        // Best-effort: mesmo se o envio da mensagem de encerramento falhar
+        // (ex: WhatsApp fora do ar), a finalização segue — o atendente
+        // ainda quer poder encerrar o atendimento.
+        try {
+          await sendMessage(id, {
+            origem: "atendente",
+            mensagem: MENSAGEM_AUTOMATICA_FINALIZAR,
+            instance: EVOLUTION_INSTANCE,
+          });
+        } catch {
+          // ignora — não bloqueia a finalização
+        }
       }
       await finishConversation(id);
       router.push("/fila");
     } catch (error) {
       setErro(normalizeError(error).message);
-      setFinalizando(false);
+      setModoFinalizar(null);
       setConfirmandoFinalizar(false);
     }
   }
@@ -506,7 +511,7 @@ export default function ConversaPage() {
             <Button
               variant="ghost"
               className="!px-3.5 !py-2 text-[0.8125rem]"
-              loading={finalizando}
+              loading={modoFinalizar !== null}
               onClick={() => setConfirmandoFinalizar(true)}
             >
               <CheckCircle2 size={15} />
@@ -789,10 +794,13 @@ export default function ConversaPage() {
       <ConfirmModal
         open={confirmandoFinalizar}
         title="Finalizar esta conversa?"
-        description="O atendimento será encerrado e não poderá mais receber mensagens."
-        confirmLabel="Finalizar"
-        loading={finalizando}
-        onConfirm={handleFinalizar}
+        description="O atendimento será encerrado e não poderá mais receber mensagens. Pode encerrar com uma mensagem de despedida automática, ou sem enviar nada."
+        confirmLabel="Finalizar com mensagem"
+        secondaryLabel="Finalizar sem mensagem"
+        loading={modoFinalizar === "com_mensagem"}
+        secondaryLoading={modoFinalizar === "sem_mensagem"}
+        onConfirm={() => handleFinalizar(true)}
+        onSecondary={() => handleFinalizar(false)}
         onCancel={() => setConfirmandoFinalizar(false)}
       />
     </div>

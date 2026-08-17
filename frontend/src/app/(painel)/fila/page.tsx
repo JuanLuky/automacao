@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Switch } from "@/components/ui/Switch";
@@ -44,7 +45,6 @@ interface ConversaItemProps {
   conversa: Conversation;
   tab: ConversationStatus;
   naoLidas: number;
-  assumindo: boolean;
   onAssumir: () => void;
   onAbrir: () => void;
 }
@@ -56,7 +56,6 @@ function ConversaItem({
   conversa: c,
   tab,
   naoLidas,
-  assumindo,
   onAssumir,
   onAbrir,
 }: ConversaItemProps) {
@@ -108,7 +107,6 @@ function ConversaItem({
             <Button
               variant="primary"
               className="!px-4 !py-2 text-[0.8125rem]"
-              loading={assumindo}
               onClick={onAssumir}
             >
               Assumir
@@ -146,7 +144,13 @@ export default function FilaPage() {
   const [pagina, setPagina] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [assumindoId, setAssumindoId] = useState<string | null>(null);
+
+  // Modal de "Iniciar atendimento?" — pergunta se manda a mensagem de
+  // apresentação automática ou não, em vez de mandar sempre sem perguntar
+  // (comportamento antigo). "modo" identifica qual dos dois botões está em
+  // andamento, pro spinner aparecer no botão certo.
+  const [iniciandoConversa, setIniciandoConversa] = useState<Conversation | null>(null);
+  const [modoIniciar, setModoIniciar] = useState<"com_mensagem" | "sem_mensagem" | null>(null);
 
   // Busca só faz sentido na aba "Finalizadas" — nas outras a lista já é
   // pequena o bastante pra não precisar filtrar.
@@ -222,29 +226,35 @@ export default function FilaPage() {
   useSocketEvent("conversa_atualizada", carregar);
   useSocketEvent("conversa_finalizada", carregar);
 
-  async function handleAssumir(id: string) {
-    setAssumindoId(id);
+  async function handleConfirmarIniciar(comMensagem: boolean) {
+    if (!iniciandoConversa) return;
+    const id = iniciandoConversa.id;
+
+    setModoIniciar(comMensagem ? "com_mensagem" : "sem_mensagem");
     setErro(null);
     try {
       await assumeConversation(id);
-      // Best-effort: mesmo se o envio da mensagem de abertura falhar (ex:
-      // WhatsApp fora do ar), o atendimento já foi assumido e a navegação
-      // segue normalmente.
-      try {
-        await sendMessage(id, {
-          origem: "atendente",
-          mensagem: mensagemAutomaticaAssumir(user?.nome ?? ""),
-          instance: EVOLUTION_INSTANCE,
-        });
-      } catch {
-        // ignora — não bloqueia a navegação
+      if (comMensagem) {
+        // Best-effort: mesmo se o envio da mensagem de abertura falhar (ex:
+        // WhatsApp fora do ar), o atendimento já foi assumido e a
+        // navegação segue normalmente.
+        try {
+          await sendMessage(id, {
+            origem: "atendente",
+            mensagem: mensagemAutomaticaAssumir(user?.nome ?? ""),
+            instance: EVOLUTION_INSTANCE,
+          });
+        } catch {
+          // ignora — não bloqueia a navegação
+        }
       }
       router.push(`/conversas/${id}`);
     } catch (error) {
       setErro(normalizeError(error).message);
       carregar();
     } finally {
-      setAssumindoId(null);
+      setModoIniciar(null);
+      setIniciandoConversa(null);
     }
   }
 
@@ -381,8 +391,7 @@ export default function FilaPage() {
               conversa={c}
               tab={tab}
               naoLidas={unreadByConversation[c.id] ?? 0}
-              assumindo={assumindoId === c.id}
-              onAssumir={() => handleAssumir(c.id)}
+              onAssumir={() => setIniciandoConversa(c)}
               onAbrir={() => router.push(`/conversas/${c.id}`)}
             />
           ))}
@@ -416,6 +425,22 @@ export default function FilaPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={iniciandoConversa !== null}
+        title="Iniciar atendimento?"
+        description={`Você vai assumir a conversa com ${
+          iniciandoConversa?.cliente_nome || "esse cliente"
+        }. Pode começar com uma mensagem de apresentação automática, ou assumir sem enviar nada.`}
+        confirmLabel="Iniciar com mensagem"
+        secondaryLabel="Iniciar sem mensagem"
+        cancelLabel="Cancelar"
+        loading={modoIniciar === "com_mensagem"}
+        secondaryLoading={modoIniciar === "sem_mensagem"}
+        onConfirm={() => handleConfirmarIniciar(true)}
+        onSecondary={() => handleConfirmarIniciar(false)}
+        onCancel={() => setIniciandoConversa(null)}
+      />
     </div>
   );
 }
