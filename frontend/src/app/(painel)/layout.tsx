@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Activity,
+  BookUser,
   Building2,
   Clock,
   LayoutDashboard,
@@ -26,6 +27,7 @@ import { NotificationsProvider } from "@/hooks/useNotifications";
 const NAV = [
   { href: "/fila", label: "Fila", icon: ListChecks },
   { href: "/grupos", label: "Grupos", icon: Users },
+  { href: "/contatos", label: "Contatos", icon: BookUser },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 ];
 

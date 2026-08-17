@@ -193,3 +193,32 @@ export interface UpdateBusinessHoursPayload {
   hora_fim?: string;
   mensagem_fora_horario?: string;
 }
+
+/** Contato gerenciado pelo Maré (adicionar/editar/excluir/importar) — ver aba /contatos. */
+export interface Contact {
+  id: string;
+  nome: string;
+  telefone: string;
+  criado_em: string;
+}
+
+export interface CreateContactPayload {
+  nome: string;
+  telefone: string;
+}
+
+export interface UpdateContactPayload {
+  nome?: string;
+  telefone?: string;
+}
+
+export interface ImportContactsResult {
+  criados: number;
+  ignorados: number;
+}
+
+/**
+ * Passthrough do payload cru da Evolution API (POST /chat/findContacts) —
+ * formato varia entre versões, normalizado em contatos/page.tsx.
+ */
+export type WhatsappContactRaw = Record<string, unknown>;

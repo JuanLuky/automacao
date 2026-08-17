@@ -106,6 +106,39 @@ export class EvolutionService {
     return response.json();
   }
 
+  // Contatos salvos no WhatsApp conectado (sincronizados a partir do
+  // celular pelo próprio WhatsApp) — devolve o JSON cru (mesmo padrão de
+  // getConnectionState/getQrCode: formato varia entre versões da Evolution
+  // API, quem normaliza é o frontend). Nunca persistido no nosso banco —
+  // busca ao vivo a cada chamada (ver ContactsController, "Contatos" no
+  // CLAUDE.md).
+  async getContacts(instance: string): Promise<unknown[]> {
+    const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+    const response = await fetch(
+      `${baseUrl}/chat/findContacts/${instance}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: apiKey ?? '',
+        },
+        body: JSON.stringify({}),
+      },
+    );
+
+    if (!response.ok) {
+      const corpo = await response.text();
+      throw new Error(
+        `Falha ao buscar contatos na Evolution API (${response.status}): ${corpo}`,
+      );
+    }
+
+    const corpo = await response.json().catch(() => []);
+    return Array.isArray(corpo) ? corpo : [];
+  }
+
   async getQrCode(instance: string): Promise<Record<string, unknown>> {
     const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
     const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');

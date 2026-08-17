@@ -2,14 +2,17 @@ import axios, { AxiosError } from "axios";
 import type {
   ApiError,
   BusinessHours,
-  Conversation,
+  Contact,
   ConversationsPaginado,
+  Conversation,
   ConversationStatus,
   ConversationTipo,
+  CreateContactPayload,
   CreateDepartmentPayload,
   CreateStatusUpdatePayload,
   CreateUserPayload,
   Department,
+  ImportContactsResult,
   LoginPayload,
   LoginResponse,
   Message,
@@ -18,9 +21,11 @@ import type {
   StatusUpdate,
   TransferPayload,
   UpdateBusinessHoursPayload,
+  UpdateContactPayload,
   UpdateDepartmentPayload,
   UpdateUserPayload,
   User,
+  WhatsappContactRaw,
   WhatsappQrCode,
   WhatsappStatus,
 } from "@/types";
@@ -326,5 +331,48 @@ export async function updateBusinessHours(
   payload: UpdateBusinessHoursPayload,
 ): Promise<BusinessHours> {
   const { data } = await api.patch<BusinessHours>("/business-hours", payload);
+  return data;
+}
+
+/** Busca ao vivo na Evolution API (findContacts) — nunca cacheado no backend. */
+export async function getWhatsappContacts(
+  instance: string,
+): Promise<WhatsappContactRaw[]> {
+  const { data } = await api.get<WhatsappContactRaw[]>("/contacts/whatsapp", {
+    params: { instance },
+  });
+  return data;
+}
+
+export async function getContacts(): Promise<Contact[]> {
+  const { data } = await api.get<Contact[]>("/contacts");
+  return data;
+}
+
+export async function createContact(
+  payload: CreateContactPayload,
+): Promise<Contact> {
+  const { data } = await api.post<Contact>("/contacts", payload);
+  return data;
+}
+
+export async function updateContact(
+  id: string,
+  payload: UpdateContactPayload,
+): Promise<Contact> {
+  const { data } = await api.patch<Contact>(`/contacts/${id}`, payload);
+  return data;
+}
+
+export async function deleteContact(id: string): Promise<void> {
+  await api.delete(`/contacts/${id}`);
+}
+
+export async function importContacts(
+  contatos: CreateContactPayload[],
+): Promise<ImportContactsResult> {
+  const { data } = await api.post<ImportContactsResult>("/contacts/import", {
+    contatos,
+  });
   return data;
 }
