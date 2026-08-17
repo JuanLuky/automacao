@@ -36,24 +36,22 @@ interface ContatoNormalizado {
   telefone: string;
 }
 
-// A Evolution API não documenta um formato fixo pra findContacts (varia
-// entre versões) — tenta os nomes de campo mais comuns em vez de assumir
-// um só. Descarta grupos (@g.us) e o pseudo-contato de status/broadcast,
-// que não são pessoas reais.
+// Confirmado contra a instância real desta sessão (POST
+// /chat/findContacts): o JID vem em "remoteJid" — "id" é a chave interna
+// do registro no banco da Evolution API, não um JID (usá-lo produzia
+// telefone com lixo). Foto vem em "profilePicUrl" (não
+// "profilePictureUrl", nome diferente do usado em
+// /chat/fetchProfilePictureUrl). Descarta grupos (@g.us) e contatos só
+// com "lid" (identificador vinculado do WhatsApp sem número de telefone
+// exposto — não dá pra iniciar conversa com isso).
 function normalizarContatoWhatsapp(raw: WhatsappContactRaw): ContatoNormalizado | null {
-  const jid =
-    (raw.id as string) || (raw.remoteJid as string) || (raw.jid as string) || "";
-  if (!jid || jid.endsWith("@g.us") || jid.includes("broadcast")) return null;
+  const jid = (raw.remoteJid as string) || "";
+  if (!jid.endsWith("@s.whatsapp.net")) return null;
 
   const telefone = jid.split("@")[0];
   if (!telefone) return null;
 
-  const nome =
-    (raw.pushName as string) ||
-    (raw.name as string) ||
-    (raw.notify as string) ||
-    (raw.verifiedName as string) ||
-    telefone;
+  const nome = (raw.pushName as string) || telefone;
 
   return { nome, telefone };
 }
