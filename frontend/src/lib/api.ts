@@ -193,6 +193,24 @@ export async function getConversationsPaginado(filtros: {
   return data;
 }
 
+/**
+ * Foto de quem escreveu uma mensagem dentro de um grupo — resolve "lid"
+ * (id vinculado, ver Message.remetente_telefone) pro telefone real via a
+ * lista de participantes do grupo antes de buscar a foto (por isso
+ * precisa da conversa/grupo, não só do número).
+ */
+export async function getConversationParticipantAvatar(
+  conversationId: string,
+  instance: string,
+  participante: string,
+): Promise<{ foto_url: string | null }> {
+  const { data } = await api.get<{ foto_url: string | null }>(
+    `/conversations/${conversationId}/participant-avatar`,
+    { params: { instance, participante } },
+  );
+  return data;
+}
+
 /** Nome (só grupo)/foto ao vivo do WhatsApp — nunca cacheado no backend. */
 export async function getConversationWhatsappInfo(
   id: string,
@@ -354,21 +372,6 @@ export async function getWhatsappContacts(
   const { data } = await api.get<WhatsappContactRaw[]>("/contacts/whatsapp", {
     params: { instance },
   });
-  return data;
-}
-
-/**
- * Foto de perfil de um número específico — usado pro avatar de quem mandou
- * cada mensagem num grupo (remetente_telefone), independente de conversa.
- */
-export async function getWhatsappAvatarByNumber(
-  instance: string,
-  numero: string,
-): Promise<{ foto_url: string | null }> {
-  const { data } = await api.get<{ foto_url: string | null }>(
-    "/contacts/whatsapp/avatar",
-    { params: { instance, numero } },
-  );
   return data;
 }
 

@@ -201,6 +201,41 @@ export class ConversationsService {
     };
   }
 
+  // Foto de perfil de quem escreveu uma mensagem dentro de um grupo.
+  // Message.remetente_telefone vem do "participant" do webhook da
+  // Evolution API — em grupos com "addressingMode: lid" (modo de
+  // privacidade mais novo do WhatsApp) isso é um "lid" (id vinculado),
+  // não o telefone de verdade, e a Evolution API não acha foto de perfil
+  // buscando por um lid. `GET /group/findGroupInfos` devolve os dois por
+  // participante (`id` = lid, `phoneNumber` = telefone real) — resolve
+  // aqui antes de buscar a foto. Se não achar o participante na lista
+  // (grupo sem "lid", ou participante saiu do grupo), tenta o valor
+  // recebido direto como fallback.
+  async buscarAvatarParticipante(
+    id: string,
+    instance: string,
+    participante: string,
+  ): Promise<{ foto_url: string | null }> {
+    const conversa = await this.buscarOuFalhar(id);
+
+    let numero = participante;
+    if (conversa.tipo === ConversationTipo.GRUPO) {
+      const grupoInfo = await this.evolutionService.getGroupInfo(instance, conversa.telefone);
+      const participantes =
+        (grupoInfo?.participants as Array<Record<string, unknown>>) ?? [];
+      const encontrado = participantes.find(
+        (p) => (p.id as string | undefined)?.split('@')[0] === participante,
+      );
+      const telefoneReal = (encontrado?.phoneNumber as string | undefined)?.split('@')[0];
+      if (telefoneReal) {
+        numero = telefoneReal;
+      }
+    }
+
+    const info = await this.evolutionService.getProfilePictureUrl(instance, numero);
+    return { foto_url: (info?.profilePictureUrl as string) ?? null };
+  }
+
   async assumir(id: string, atendenteId: string): Promise<Conversation> {
     const conversa = await this.buscarOuFalhar(id);
     this.recusarSeGrupo(conversa, 'assumir');

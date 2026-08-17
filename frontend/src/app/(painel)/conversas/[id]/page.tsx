@@ -41,8 +41,8 @@ import {
   EVOLUTION_INSTANCE,
   finishConversation,
   getConversation,
+  getConversationParticipantAvatar,
   getMessages,
-  getWhatsappAvatarByNumber,
   normalizeError,
   sendMessage,
   transferConversation,
@@ -203,7 +203,7 @@ export default function ConversaPage() {
       if (telefonesBuscadosRef.current.has(telefone)) continue;
       telefonesBuscadosRef.current.add(telefone);
 
-      getWhatsappAvatarByNumber(EVOLUTION_INSTANCE, telefone)
+      getConversationParticipantAvatar(id, EVOLUTION_INSTANCE, telefone)
         .then(({ foto_url }) => {
           setAvataresParticipantes((atuais) => ({ ...atuais, [telefone]: foto_url }));
         })

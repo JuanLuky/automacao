@@ -66,6 +66,22 @@ export class ConversationsController {
     return this.conversationsService.buscarInfoWhatsapp(id, instance);
   }
 
+  // Foto de quem escreveu uma mensagem dentro do grupo — resolve "lid" pra
+  // telefone real via a lista de participantes do grupo antes de buscar a
+  // foto (ver ConversationsService.buscarAvatarParticipante).
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/participant-avatar')
+  buscarAvatarParticipante(
+    @Param('id') id: string,
+    @Query('instance') instance: string,
+    @Query('participante') participante: string,
+  ) {
+    if (!instance || !participante) {
+      throw new BadRequestException('Campos "instance" e "participante" são obrigatórios.');
+    }
+    return this.conversationsService.buscarAvatarParticipante(id, instance, participante);
+  }
+
   // Rota usada pelo n8n para checar se já existe conversa em aberto.
   // Sem autenticação de atendente de propósito — quem protege esse endpoint
   // é a rede interna do Docker (n8n só é alcançável de dentro da rede).
