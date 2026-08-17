@@ -139,6 +139,61 @@ export class EvolutionService {
     return Array.isArray(corpo) ? corpo : [];
   }
 
+  // Nome + foto de um grupo do WhatsApp — devolve o JSON cru (campos
+  // conhecidos: subject, pictureUrl, participants...; mesmo padrão de
+  // getConnectionState/getContacts, sem normalizar). Usado por
+  // ConversationsService.buscarInfoWhatsapp pra conversa tipo grupo.
+  async getGroupInfo(
+    instance: string,
+    groupJid: string,
+  ): Promise<Record<string, unknown> | null> {
+    const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+    const response = await fetch(
+      `${baseUrl}/group/findGroupInfos/${instance}?groupJid=${encodeURIComponent(groupJid)}`,
+      { headers: { apikey: apiKey ?? '' } },
+    );
+
+    if (!response.ok) {
+      // Grupo pode ter sido removido/o número saiu dele — não é um erro
+      // fatal pra quem só quer mostrar nome/foto, devolve vazio.
+      return null;
+    }
+
+    return response.json().catch(() => null);
+  }
+
+  // Foto de perfil de um contato individual (não grupo) — devolve o JSON
+  // cru da Evolution API ({ wuid, profilePictureUrl }), mesmo padrão de
+  // getGroupInfo. null quando o contato não tem foto ou não foi
+  // encontrado (não é um erro fatal).
+  async getProfilePictureUrl(
+    instance: string,
+    numero: string,
+  ): Promise<Record<string, unknown> | null> {
+    const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+    const response = await fetch(
+      `${baseUrl}/chat/fetchProfilePictureUrl/${instance}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: apiKey ?? '',
+        },
+        body: JSON.stringify({ number: numero }),
+      },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return response.json().catch(() => null);
+  }
+
   async getQrCode(instance: string): Promise<Record<string, unknown>> {
     const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
     const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');

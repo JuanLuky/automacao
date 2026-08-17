@@ -12,6 +12,7 @@ import {
   Search,
   User as UserIcon,
 } from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -21,6 +22,7 @@ import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useVerTodosSetores } from "@/hooks/useVerTodosSetores";
+import { useWhatsappAvatar } from "@/hooks/useWhatsappAvatar";
 import {
   assumeConversation,
   EVOLUTION_INSTANCE,
@@ -37,6 +39,90 @@ const TABS: { status: ConversationStatus; label: string }[] = [
   { status: "em_atendimento", label: "Em atendimento" },
   { status: "finalizado", label: "Finalizadas" },
 ];
+
+interface ConversaItemProps {
+  conversa: Conversation;
+  tab: ConversationStatus;
+  naoLidas: number;
+  assumindo: boolean;
+  onAssumir: () => void;
+  onAbrir: () => void;
+}
+
+// Componente próprio (em vez de inline no .map()) só pra poder chamar
+// useWhatsappAvatar por linha — cada card busca sua própria foto ao vivo
+// do WhatsApp, independente dos outros (ver "Avatares" no CLAUDE.md).
+function ConversaItem({
+  conversa: c,
+  tab,
+  naoLidas,
+  assumindo,
+  onAssumir,
+  onAbrir,
+}: ConversaItemProps) {
+  const { fotoUrl } = useWhatsappAvatar(c.id);
+
+  return (
+    <li className="animate-queue-in rounded-xl border border-app bg-raised p-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar src={fotoUrl} alt={c.cliente_nome ?? "Cliente"} tipo="cliente" />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-primary">
+                {c.cliente_nome || "Cliente sem nome"}
+              </span>
+              {c.departamento && (
+                <span className="text-eyebrow font-semibold uppercase text-tide-400">
+                  {c.departamento.nome}
+                </span>
+              )}
+              {naoLidas > 0 && (
+                <span
+                  className="flex h-5 min-w-5 items-center justify-center rounded-full bg-alert px-1.5 text-[0.6875rem] font-semibold text-white"
+                  aria-label={`${naoLidas} mensagens não lidas`}
+                >
+                  {naoLidas}
+                </span>
+              )}
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem] text-secondary">
+              <span className="flex items-center gap-1">
+                <Phone size={13} />
+                {c.telefone}
+              </span>
+              <span>{formatRelativeTime(c.criado_em)}</span>
+              {c.atendente && (
+                <span className="flex items-center gap-1">
+                  <UserIcon size={13} />
+                  {c.atendente.nome}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <StatusBadge status={c.status} />
+          {tab === "aguardando" ? (
+            <Button
+              variant="primary"
+              className="!px-4 !py-2 text-[0.8125rem]"
+              loading={assumindo}
+              onClick={onAssumir}
+            >
+              Assumir
+            </Button>
+          ) : (
+            <Button variant="ghost" className="!px-4 !py-2 text-[0.8125rem]" onClick={onAbrir}>
+              Abrir
+            </Button>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
 
 const POR_PAGINA = 5;
 
@@ -290,68 +376,15 @@ export default function FilaPage() {
       ) : (
         <ul className="space-y-3">
           {conversas.map((c) => (
-            <li
+            <ConversaItem
               key={c.id}
-              className="animate-queue-in rounded-xl border border-app bg-raised p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-primary">
-                      {c.cliente_nome || "Cliente sem nome"}
-                    </span>
-                    {c.departamento && (
-                      <span className="text-eyebrow font-semibold uppercase text-tide-400">
-                        {c.departamento.nome}
-                      </span>
-                    )}
-                    {unreadByConversation[c.id] > 0 && (
-                      <span
-                        className="flex h-5 min-w-5 items-center justify-center rounded-full bg-alert px-1.5 text-[0.6875rem] font-semibold text-white"
-                        aria-label={`${unreadByConversation[c.id]} mensagens não lidas`}
-                      >
-                        {unreadByConversation[c.id]}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem] text-secondary">
-                    <span className="flex items-center gap-1">
-                      <Phone size={13} />
-                      {c.telefone}
-                    </span>
-                    <span>{formatRelativeTime(c.criado_em)}</span>
-                    {c.atendente && (
-                      <span className="flex items-center gap-1">
-                        <UserIcon size={13} />
-                        {c.atendente.nome}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <StatusBadge status={c.status} />
-                  {tab === "aguardando" ? (
-                    <Button
-                      variant="primary"
-                      className="!px-4 !py-2 text-[0.8125rem]"
-                      loading={assumindoId === c.id}
-                      onClick={() => handleAssumir(c.id)}
-                    >
-                      Assumir
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      className="!px-4 !py-2 text-[0.8125rem]"
-                      onClick={() => router.push(`/conversas/${c.id}`)}
-                    >
-                      Abrir
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </li>
+              conversa={c}
+              tab={tab}
+              naoLidas={unreadByConversation[c.id] ?? 0}
+              assumindo={assumindoId === c.id}
+              onAssumir={() => handleAssumir(c.id)}
+              onAbrir={() => router.push(`/conversas/${c.id}`)}
+            />
           ))}
         </ul>
       )}

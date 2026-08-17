@@ -10,8 +10,10 @@ import {
   Search,
   AlertCircle,
 } from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { useWhatsappAvatar } from "@/hooks/useWhatsappAvatar";
 import { getConversationsPaginado, normalizeError } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
 import type { Conversation } from "@/types";
@@ -22,6 +24,44 @@ const POR_PAGINA = 5;
 // pra exibição na lista, o "@g.us" é implementação da Evolution API.
 function formatarIdentificadorGrupo(telefone: string): string {
   return telefone.split("@")[0];
+}
+
+interface GrupoItemProps {
+  conversa: Conversation;
+  onAbrir: () => void;
+}
+
+// Busca nome + foto ao vivo do WhatsApp por linha (ver useWhatsappAvatar) —
+// cliente_nome do grupo costuma ficar vazio (não era buscado na criação,
+// ver "Avatares" no CLAUDE.md), então o nome vindo da API é o fallback
+// principal aqui, não só um adorno.
+function GrupoItem({ conversa: c, onAbrir }: GrupoItemProps) {
+  const { nome, fotoUrl } = useWhatsappAvatar(c.id);
+  const nomeExibido = c.cliente_nome || nome || "Grupo sem nome";
+
+  return (
+    <li className="animate-queue-in rounded-xl border border-app bg-raised p-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar src={fotoUrl} alt={nomeExibido} tipo="grupo" />
+          <div className="min-w-0">
+            <span className="font-semibold text-primary">{nomeExibido}</span>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem] text-secondary">
+              <span className="flex items-center gap-1">
+                <MessagesSquare size={13} />
+                {formatarIdentificadorGrupo(c.telefone)}
+              </span>
+              <span>{formatRelativeTime(c.criado_em)}</span>
+            </div>
+          </div>
+        </div>
+
+        <Button variant="ghost" className="!px-4 !py-2 text-[0.8125rem]" onClick={onAbrir}>
+          Abrir
+        </Button>
+      </div>
+    </li>
+  );
 }
 
 export default function GruposPage() {
@@ -127,33 +167,7 @@ export default function GruposPage() {
       ) : (
         <ul className="space-y-3">
           {conversas.map((c) => (
-            <li
-              key={c.id}
-              className="animate-queue-in rounded-xl border border-app bg-raised p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <span className="font-semibold text-primary">
-                    {c.cliente_nome || "Grupo sem nome"}
-                  </span>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem] text-secondary">
-                    <span className="flex items-center gap-1">
-                      <MessagesSquare size={13} />
-                      {formatarIdentificadorGrupo(c.telefone)}
-                    </span>
-                    <span>{formatRelativeTime(c.criado_em)}</span>
-                  </div>
-                </div>
-
-                <Button
-                  variant="ghost"
-                  className="!px-4 !py-2 text-[0.8125rem]"
-                  onClick={() => router.push(`/conversas/${c.id}`)}
-                >
-                  Abrir
-                </Button>
-              </div>
-            </li>
+            <GrupoItem key={c.id} conversa={c} onAbrir={() => router.push(`/conversas/${c.id}`)} />
           ))}
         </ul>
       )}

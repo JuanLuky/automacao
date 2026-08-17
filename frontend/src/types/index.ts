@@ -225,3 +225,13 @@ export interface ImportContactsResult {
  * formato varia entre versões, normalizado em contatos/page.tsx.
  */
 export type WhatsappContactRaw = Record<string, unknown>;
+
+/**
+ * Nome (só grupo) + foto de perfil ao vivo do WhatsApp de uma conversa —
+ * ver GET /conversations/:id/whatsapp-info. Nunca persistido; usado pelo
+ * componente Avatar/useWhatsappAvatar.
+ */
+export interface WhatsappConversationInfo {
+  nome: string | null;
+  foto_url: string | null;
+}

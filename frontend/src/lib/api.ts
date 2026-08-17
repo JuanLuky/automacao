@@ -26,6 +26,7 @@ import type {
   UpdateUserPayload,
   User,
   WhatsappContactRaw,
+  WhatsappConversationInfo,
   WhatsappQrCode,
   WhatsappStatus,
 } from "@/types";
@@ -189,6 +190,18 @@ export async function getConversationsPaginado(filtros: {
   const { data } = await api.get<ConversationsPaginado>("/conversations", {
     params: filtros,
   });
+  return data;
+}
+
+/** Nome (só grupo)/foto ao vivo do WhatsApp — nunca cacheado no backend. */
+export async function getConversationWhatsappInfo(
+  id: string,
+  instance: string,
+): Promise<WhatsappConversationInfo> {
+  const { data } = await api.get<WhatsappConversationInfo>(
+    `/conversations/${id}/whatsapp-info`,
+    { params: { instance } },
+  );
   return data;
 }
 

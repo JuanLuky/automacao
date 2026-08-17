@@ -25,6 +25,7 @@ import {
   User as UserIcon,
   X,
 } from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { MediaMessage } from "@/components/ui/MediaMessage";
@@ -35,6 +36,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { useWhatsappAvatar } from "@/hooks/useWhatsappAvatar";
 import {
   EVOLUTION_INSTANCE,
   finishConversation,
@@ -113,6 +115,7 @@ export default function ConversaPage() {
   const { user } = useAuth();
   const { departments } = useDepartments();
   const { clearUnread } = useNotifications();
+  const { nome: nomeWhatsapp, fotoUrl } = useWhatsappAvatar(id);
 
   const [conversa, setConversa] = useState<Conversation | null | undefined>(
     undefined,
@@ -408,10 +411,19 @@ export default function ConversaPage() {
             <ArrowLeft size={16} />
           </button>
 
+          <Avatar
+            src={fotoUrl}
+            alt={conversa.cliente_nome || nomeWhatsapp || "Conversa"}
+            tipo={conversa.tipo}
+            size={44}
+            className="mt-0.5"
+          />
+
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-display text-lg font-semibold text-primary">
                 {conversa.cliente_nome ||
+                  nomeWhatsapp ||
                   (conversa.tipo === "grupo" ? "Grupo sem nome" : "Cliente sem nome")}
               </h1>
               {conversa.departamento && (
