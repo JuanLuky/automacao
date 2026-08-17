@@ -16,6 +16,7 @@ import type {
   LoginPayload,
   LoginResponse,
   Message,
+  RoleLabels,
   SendMessagePayload,
   StatusAtual,
   StatusUpdate,
@@ -23,6 +24,7 @@ import type {
   UpdateBusinessHoursPayload,
   UpdateContactPayload,
   UpdateDepartmentPayload,
+  UpdateRoleLabelsPayload,
   UpdateUserPayload,
   User,
   WhatsappContactRaw,
@@ -405,5 +407,18 @@ export async function importContacts(
   const { data } = await api.post<ImportContactsResult>("/contacts/import", {
     contatos,
   });
+  return data;
+}
+
+/** Qualquer atendente autenticado pode ler — o rótulo aparece pra todo mundo. */
+export async function getRoleLabels(): Promise<RoleLabels> {
+  const { data } = await api.get<RoleLabels>("/role-labels");
+  return data;
+}
+
+export async function updateRoleLabels(
+  payload: UpdateRoleLabelsPayload,
+): Promise<RoleLabels> {
+  const { data } = await api.patch<RoleLabels>("/role-labels", payload);
   return data;
 }

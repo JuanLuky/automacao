@@ -6,6 +6,8 @@ import { Department } from '../departments/entities/department.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { BusinessHours } from '../business-hours/entities/business-hours.entity';
 import { BUSINESS_HOURS_PADRAO } from '../business-hours/business-hours.service';
+import { RoleLabels } from '../role-labels/entities/role-labels.entity';
+import { ROLE_LABELS_PADRAO } from '../role-labels/role-labels.service';
 
 dotenv.config();
 
@@ -23,6 +25,7 @@ async function seed() {
   const departmentsRepo = AppDataSource.getRepository(Department);
   const usersRepo = AppDataSource.getRepository(User);
   const businessHoursRepo = AppDataSource.getRepository(BusinessHours);
+  const roleLabelsRepo = AppDataSource.getRepository(RoleLabels);
 
   for (const dep of DEPARTAMENTOS_PADRAO) {
     const existente = await departmentsRepo.findOne({
@@ -62,6 +65,14 @@ async function seed() {
     console.log('Horário de funcionamento padrão criado.');
   } else {
     console.log('Horário de funcionamento já configurado, pulando.');
+  }
+
+  const roleLabelsExistente = await roleLabelsRepo.find({ take: 1 });
+  if (roleLabelsExistente.length === 0) {
+    await roleLabelsRepo.save(roleLabelsRepo.create(ROLE_LABELS_PADRAO));
+    console.log('Rótulos de papéis padrão criados.');
+  } else {
+    console.log('Rótulos de papéis já configurados, pulando.');
   }
 
   await AppDataSource.destroy();

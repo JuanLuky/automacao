@@ -17,6 +17,7 @@ import {
   QrCode,
   ShieldCheck,
   Sun,
+  Tag,
   Users,
   UserPlus,
   Waves,
@@ -25,6 +26,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { DepartmentsProvider } from "@/hooks/useDepartments";
 import { NotificationsProvider } from "@/hooks/useNotifications";
+import { RoleLabelsProvider, useRoleLabels } from "@/hooks/useRoleLabels";
 
 const NAV = [
   { href: "/fila", label: "Fila", icon: ListChecks },
@@ -43,6 +45,7 @@ const NAV_ADMIN = [
   { href: "/whatsapp", label: "WhatsApp", icon: QrCode },
   { href: "/horario-funcionamento", label: "Horário", icon: Clock },
   { href: "/status/publicar", label: "Status", icon: Activity },
+  { href: "/perfis", label: "Perfis", icon: Tag },
 ];
 
 function AdminNavMenu({ pathname }: { pathname: string | null }) {
@@ -115,6 +118,23 @@ function AdminNavMenu({ pathname }: { pathname: string | null }) {
   );
 }
 
+// Precisa ser um componente à parte (em vez de ler useRoleLabels direto em
+// PainelLayout) porque o hook só funciona dentro do RoleLabelsProvider —
+// e o provider é montado pelo próprio PainelLayout, envolvendo esse JSX.
+function UserRoleLabel({ role }: { role: string | undefined }) {
+  const { roleLabels } = useRoleLabels();
+  const label =
+    role === "admin"
+      ? roleLabels.admin
+      : role === "supervisor"
+        ? roleLabels.supervisor
+        : roleLabels.atendente;
+
+  return (
+    <p className="text-[0.6875rem] uppercase tracking-wide text-muted">{label}</p>
+  );
+}
+
 export default function PainelLayout({
   children,
 }: {
@@ -140,6 +160,7 @@ export default function PainelLayout({
 
   return (
     <DepartmentsProvider>
+      <RoleLabelsProvider>
       <NotificationsProvider>
         <div className="min-h-screen bg-surface">
           <header className="sticky top-0 z-10 border-b border-app bg-raised/80 backdrop-blur">
@@ -190,13 +211,7 @@ export default function PainelLayout({
                   <p className="text-[0.8125rem] font-medium text-primary">
                     {user?.nome}
                   </p>
-                  <p className="text-[0.6875rem] uppercase tracking-wide text-muted">
-                    {user?.role === "admin"
-                      ? "Administrador"
-                      : user?.role === "supervisor"
-                        ? "Supervisor"
-                        : "Atendente"}
-                  </p>
+                  <UserRoleLabel role={user?.role} />
                 </div>
 
                 <button
@@ -214,6 +229,7 @@ export default function PainelLayout({
           <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
         </div>
       </NotificationsProvider>
+      </RoleLabelsProvider>
     </DepartmentsProvider>
   );
 }

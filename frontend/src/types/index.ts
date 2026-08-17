@@ -197,6 +197,22 @@ export interface UpdateBusinessHoursPayload {
   mensagem_fora_horario?: string;
 }
 
+/**
+ * Rótulos de exibição dos três papéis (UserRole é fixo no código — isso é
+ * só o texto mostrado, ver /perfis no painel).
+ */
+export interface RoleLabels {
+  atendente: string;
+  supervisor: string;
+  admin: string;
+}
+
+export interface UpdateRoleLabelsPayload {
+  atendente?: string;
+  supervisor?: string;
+  admin?: string;
+}
+
 /** Contato gerenciado pelo Maré (adicionar/editar/excluir/importar) — ver aba /contatos. */
 export interface Contact {
   id: string;

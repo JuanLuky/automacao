@@ -20,6 +20,7 @@ import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
+import { useRoleLabels } from "@/hooks/useRoleLabels";
 import {
   createUser,
   deleteUser,
@@ -35,6 +36,7 @@ export default function UsuariosPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { departments } = useDepartments();
+  const { roleLabels } = useRoleLabels();
   const isAdmin = user?.role === "admin";
 
   const [usuarios, setUsuarios] = useState<User[]>([]);
@@ -258,9 +260,9 @@ export default function UsuariosPage() {
               value={role}
               onChange={(e) => setRole(e.target.value as UserRole)}
             >
-              <option value="atendente">Atendente</option>
-              <option value="supervisor">Supervisor</option>
-              <option value="admin">Administrador</option>
+              <option value="atendente">{roleLabels.atendente}</option>
+              <option value="supervisor">{roleLabels.supervisor}</option>
+              <option value="admin">{roleLabels.admin}</option>
             </Select>
           </div>
 
@@ -330,10 +332,10 @@ export default function UsuariosPage() {
                     }`}
                   >
                     {u.role === "admin"
-                      ? "Administrador"
+                      ? roleLabels.admin
                       : u.role === "supervisor"
-                        ? "Supervisor"
-                        : "Atendente"}
+                        ? roleLabels.supervisor
+                        : roleLabels.atendente}
                   </span>
                   {!u.ativo && (
                     <span className="rounded-full bg-alert/12 px-2.5 py-1 text-[0.75rem] font-medium text-alert">
