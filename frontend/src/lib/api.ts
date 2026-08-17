@@ -357,6 +357,21 @@ export async function getWhatsappContacts(
   return data;
 }
 
+/**
+ * Foto de perfil de um número específico — usado pro avatar de quem mandou
+ * cada mensagem num grupo (remetente_telefone), independente de conversa.
+ */
+export async function getWhatsappAvatarByNumber(
+  instance: string,
+  numero: string,
+): Promise<{ foto_url: string | null }> {
+  const { data } = await api.get<{ foto_url: string | null }>(
+    "/contacts/whatsapp/avatar",
+    { params: { instance, numero } },
+  );
+  return data;
+}
+
 export async function getContacts(): Promise<Contact[]> {
   const { data } = await api.get<Contact[]>("/contacts");
   return data;

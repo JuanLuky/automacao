@@ -40,6 +40,23 @@ export class ContactsController {
     return this.evolutionService.getContacts(instance);
   }
 
+  // Foto de perfil de um número específico — usado pelo avatar de quem
+  // mandou cada mensagem num grupo (remetente_telefone, ver "Grupos do
+  // WhatsApp"/"Avatares" no CLAUDE.md). Independente de conversa: o
+  // remetente de uma mensagem de grupo não tem conversa própria, só o
+  // telefone salvo na mensagem.
+  @Get('whatsapp/avatar')
+  async avatar(
+    @Query('instance') instance: string,
+    @Query('numero') numero: string,
+  ) {
+    if (!instance || !numero) {
+      throw new BadRequestException('Campos "instance" e "numero" são obrigatórios.');
+    }
+    const info = await this.evolutionService.getProfilePictureUrl(instance, numero);
+    return { foto_url: (info?.profilePictureUrl as string) ?? null };
+  }
+
   @Get()
   findAll() {
     return this.contactsService.findAll();

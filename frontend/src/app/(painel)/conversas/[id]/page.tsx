@@ -42,6 +42,7 @@ import {
   finishConversation,
   getConversation,
   getMessages,
+  getWhatsappAvatarByNumber,
   normalizeError,
   sendMessage,
   transferConversation,
@@ -144,6 +145,15 @@ export default function ConversaPage() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Avatar de quem mandou cada mensagem num grupo (remetente_telefone) —
+  // cacheado por telefone nesta tela pra não refazer a chamada pra cada
+  // mensagem repetida do mesmo participante, só uma vez por pessoa que
+  // aparece na conversa. Ver "Avatares" no CLAUDE.md.
+  const [avataresParticipantes, setAvataresParticipantes] = useState<
+    Record<string, string | null>
+  >({});
+  const telefonesBuscadosRef = useRef<Set<string>>(new Set());
+
   const carregar = useCallback(async () => {
     try {
       const [conversaData, mensagensData] = await Promise.all([
@@ -172,6 +182,33 @@ export default function ConversaPage() {
       behavior: "smooth",
     });
   }, [mensagens.length]);
+
+  // Busca a foto de cada participante do grupo que ainda não foi buscado
+  // nesta tela (novo telefone aparecendo numa mensagem, ex: mais alguém
+  // escreveu, ou o histórico terminou de carregar).
+  useEffect(() => {
+    if (conversa?.tipo !== "grupo" || !EVOLUTION_INSTANCE) return;
+
+    const telefonesNovos = new Set<string>();
+    for (const m of mensagens) {
+      if (m.origem === "cliente" && m.remetente_telefone) {
+        telefonesNovos.add(m.remetente_telefone);
+      }
+    }
+
+    for (const telefone of Array.from(telefonesNovos)) {
+      if (telefonesBuscadosRef.current.has(telefone)) continue;
+      telefonesBuscadosRef.current.add(telefone);
+
+      getWhatsappAvatarByNumber(EVOLUTION_INSTANCE, telefone)
+        .then(({ foto_url }) => {
+          setAvataresParticipantes((atuais) => ({ ...atuais, [telefone]: foto_url }));
+        })
+        .catch(() => {
+          // silencioso — avatar é adorno, não bloqueia a conversa
+        });
+    }
+  }, [conversa?.tipo, mensagens]);
 
   // Some enquanto o usuário está numa gravação — solta o microfone e o
   // timer se o componente desmontar no meio (ex: navegou pra outra
@@ -586,14 +623,23 @@ export default function ConversaPage() {
                 </span>
               )}
               {/* remetente dentro de um grupo — várias pessoas escrevem na
-                  mesma conversa, então precisa identificar quem mandou cada
-                  mensagem (ver "Grupos do WhatsApp" no CLAUDE.md) */}
+                  mesma conversa, então precisa identificar (avatar + nome)
+                  quem mandou cada mensagem (ver "Grupos do WhatsApp" e
+                  "Avatares" no CLAUDE.md) */}
               {m.origem === "cliente" &&
                 conversa.tipo === "grupo" &&
                 (m.remetente_nome || m.remetente_telefone) && (
-                  <span className="mb-1 px-1 text-[0.75rem] font-semibold text-secondary">
-                    {m.remetente_nome || m.remetente_telefone}
-                  </span>
+                  <div className="mb-1 flex items-center gap-1.5 px-1">
+                    <Avatar
+                      src={m.remetente_telefone ? avataresParticipantes[m.remetente_telefone] : null}
+                      alt={m.remetente_nome || m.remetente_telefone || "Participante"}
+                      tipo="cliente"
+                      size={18}
+                    />
+                    <span className="text-[0.75rem] font-semibold text-secondary">
+                      {m.remetente_nome || m.remetente_telefone}
+                    </span>
+                  </div>
                 )}
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[0.875rem] leading-relaxed ${
