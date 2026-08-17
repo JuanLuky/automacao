@@ -114,7 +114,11 @@ export default function PainelLayout({
                     {user?.nome}
                   </p>
                   <p className="text-[0.6875rem] uppercase tracking-wide text-muted">
-                    {user?.role === "admin" ? "Administrador" : "Atendente"}
+                    {user?.role === "admin"
+                      ? "Administrador"
+                      : user?.role === "supervisor"
+                        ? "Supervisor"
+                        : "Atendente"}
                   </p>
                 </div>
 

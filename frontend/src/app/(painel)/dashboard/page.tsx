@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, Clock, Loader2, Users } from "lucide-react";
 import { Select } from "@/components/ui/Select";
+import { Switch } from "@/components/ui/Switch";
 import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { useVerTodosSetores } from "@/hooks/useVerTodosSetores";
 import { getConversations, normalizeError } from "@/lib/api";
 import type { Conversation } from "@/types";
 
@@ -19,14 +21,17 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const { departments } = useDepartments();
   const isAdmin = user?.role === "admin";
+  const isSupervisor = user?.role === "supervisor";
+  const { verTodos, setVerTodos } = useVerTodosSetores();
+  const podeVerTodos = isAdmin || (isSupervisor && verTodos);
 
   const [departamentoId, setDepartamentoId] = useState("");
   const [conversas, setConversas] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
-  const semSetor = !isAdmin && !user?.departamento_id;
-  const filtroDepartamento = isAdmin ? departamentoId || undefined : user?.departamento_id;
+  const semSetor = !podeVerTodos && !user?.departamento_id;
+  const filtroDepartamento = podeVerTodos ? departamentoId || undefined : user?.departamento_id;
 
   const carregar = useCallback(async () => {
     if (semSetor) {
@@ -60,7 +65,7 @@ export default function DashboardPage() {
     finalizado: conversas.filter((c) => c.status === "finalizado").length,
   };
 
-  const porDepartamento = isAdmin
+  const porDepartamento = podeVerTodos
     ? departments.map((d) => ({
         departamento: d,
         total: conversas.filter((c) => c.departamento_id === d.id).length,
@@ -76,22 +81,30 @@ export default function DashboardPage() {
           <h1 className="mt-2 font-display text-display-md font-semibold text-primary">Dashboard</h1>
         </div>
 
-        {isAdmin && (
-          <div className="w-full max-w-[240px] sm:w-auto">
-            <Select
-              aria-label="Filtrar por setor"
-              value={departamentoId}
-              onChange={(e) => setDepartamentoId(e.target.value)}
-            >
-              <option value="">Todos os setores</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.nome}
-                </option>
-              ))}
-            </Select>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-4">
+          {isSupervisor && (
+            <label className="flex items-center gap-2.5 text-[0.8125rem] text-secondary">
+              <Switch checked={verTodos} onChange={setVerTodos} label="Ver todos os setores" />
+              Ver todos os setores
+            </label>
+          )}
+          {podeVerTodos && (
+            <div className="w-full max-w-[240px] sm:w-auto">
+              <Select
+                aria-label="Filtrar por setor"
+                value={departamentoId}
+                onChange={(e) => setDepartamentoId(e.target.value)}
+              >
+                <option value="">Todos os setores</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nome}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+        </div>
       </header>
 
       {semSetor && (
@@ -131,7 +144,7 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            {isAdmin && (
+            {podeVerTodos && (
               <div className="mt-8 overflow-hidden rounded-xl border border-app bg-raised">
                 <div className="border-b border-app px-5 py-3.5">
                   <p className="text-eyebrow font-semibold uppercase text-muted">Por setor</p>

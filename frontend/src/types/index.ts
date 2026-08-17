@@ -10,7 +10,10 @@ export type MessageOrigin = "cliente" | "atendente" | "sistema";
 
 export type MessageTipo = "texto" | "imagem" | "audio" | "documento" | "video";
 
-export type UserRole = "admin" | "atendente";
+// supervisor: como atendente por padrão (só o próprio setor), mas pode
+// alternar pra ver todos os setores via um toggle no painel — ver
+// useVerTodosSetores.
+export type UserRole = "admin" | "atendente" | "supervisor";
 
 export interface Department {
   id: string;

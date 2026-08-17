@@ -11,6 +11,13 @@ import { Department } from '../../departments/entities/department.entity';
 export enum UserRole {
   ADMIN = 'admin',
   ATENDENTE = 'atendente',
+  // Como atendente (só vê a fila/dashboard do próprio setor por padrão),
+  // mas pode alternar pra ver todos os setores via um toggle no painel
+  // (ver useVerTodosSetores no frontend) — controle inteiramente
+  // client-side, mesmo nível de confiança já documentado pra
+  // admin/atendente em fila e dashboard (o backend não filtra
+  // GET /conversations por papel).
+  SUPERVISOR = 'supervisor',
 }
 
 @Entity('users')

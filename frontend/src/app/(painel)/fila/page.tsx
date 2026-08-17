@@ -15,10 +15,12 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { Switch } from "@/components/ui/Switch";
 import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { useVerTodosSetores } from "@/hooks/useVerTodosSetores";
 import {
   assumeConversation,
   EVOLUTION_INSTANCE,
@@ -45,6 +47,12 @@ export default function FilaPage() {
   const { unreadByConversation } = useNotifications();
 
   const isAdmin = user?.role === "admin";
+  const isSupervisor = user?.role === "supervisor";
+  const { verTodos, setVerTodos } = useVerTodosSetores();
+  // Admin sempre vê tudo; supervisor só quando o toggle está ligado (ver
+  // "Regras de negócio no frontend" no CLAUDE.md — confiança client-side,
+  // mesmo padrão já usado pro admin).
+  const podeVerTodos = isAdmin || (isSupervisor && verTodos);
   const [tab, setTab] = useState<ConversationStatus>("aguardando");
   const [departamentoId, setDepartamentoId] = useState("");
   const [conversas, setConversas] = useState<Conversation[]>([]);
@@ -66,8 +74,8 @@ export default function FilaPage() {
     return () => clearTimeout(timer);
   }, [busca]);
 
-  const semSetor = !isAdmin && !user?.departamento_id;
-  const filtroDepartamento = isAdmin ? departamentoId || undefined : user?.departamento_id;
+  const semSetor = !podeVerTodos && !user?.departamento_id;
+  const filtroDepartamento = podeVerTodos ? departamentoId || undefined : user?.departamento_id;
   const isFinalizadas = tab === "finalizado";
 
   // Trocar de aba ou de filtro invalida a página atual — sempre volta pra 1.
@@ -162,22 +170,30 @@ export default function FilaPage() {
           <h1 className="mt-2 font-display text-display-md font-semibold text-primary">Fila</h1>
         </div>
 
-        {isAdmin && (
-          <div className="w-full max-w-[240px] sm:w-auto">
-            <Select
-              aria-label="Filtrar por setor"
-              value={departamentoId}
-              onChange={(e) => setDepartamentoId(e.target.value)}
-            >
-              <option value="">Todos os setores</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.nome}
-                </option>
-              ))}
-            </Select>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-4">
+          {isSupervisor && (
+            <label className="flex items-center gap-2.5 text-[0.8125rem] text-secondary">
+              <Switch checked={verTodos} onChange={setVerTodos} label="Ver todos os setores" />
+              Ver todos os setores
+            </label>
+          )}
+          {podeVerTodos && (
+            <div className="w-full max-w-[240px] sm:w-auto">
+              <Select
+                aria-label="Filtrar por setor"
+                value={departamentoId}
+                onChange={(e) => setDepartamentoId(e.target.value)}
+              >
+                <option value="">Todos os setores</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nome}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="mb-6 flex gap-1 border-b border-app">
