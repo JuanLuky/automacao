@@ -208,7 +208,7 @@ frontend/src/
 └── types/         # espelham as entidades do backend
 ```
 
-Não existe `GET /conversations/:id` no backend — só `GET /conversations` (lista). A tela de chat busca a conversa via `getConversation(id)` em `lib/api.ts`, que filtra a lista completa client-side. Se um dia isso virar gargalo, a correção é adicionar o endpoint no backend, não replicar esse workaround em outro lugar.
+`GET /conversations/:id` existe no backend desde a feature de Grupos (2026-08-15, ver "Grupos do WhatsApp" abaixo) — a tela de chat busca a conversa via `getConversation(id)` em `lib/api.ts`, que chama esse endpoint direto. Antes disso, buscava a lista inteira (`GET /conversations`) e filtrava client-side; esse workaround não existe mais.
 
 ### Regras de negócio no frontend
 
