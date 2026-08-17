@@ -10,7 +10,10 @@ export type MessageOrigin = "cliente" | "atendente" | "sistema";
 
 export type MessageTipo = "texto" | "imagem" | "audio" | "documento" | "video";
 
-export type UserRole = "admin" | "atendente";
+// supervisor: como atendente por padrão (só o próprio setor), mas pode
+// alternar pra ver todos os setores via um toggle no painel — ver
+// useVerTodosSetores.
+export type UserRole = "admin" | "atendente" | "supervisor";
 
 export interface Department {
   id: string;
@@ -46,6 +49,11 @@ export interface Message {
   // retornado por GET /conversations/:id/messages.
   cliente_nome?: string | null;
   conversa_atendente_id?: string | null;
+  // Só preenchidos quando origem = cliente E a conversa é um grupo (várias
+  // pessoas escrevem na mesma conversa) — quem realmente mandou essa
+  // mensagem. Ver "Grupos do WhatsApp" no CLAUDE.md.
+  remetente_nome?: string | null;
+  remetente_telefone?: string | null;
 }
 
 export interface Conversation {
@@ -187,4 +195,43 @@ export interface UpdateBusinessHoursPayload {
   hora_inicio?: string;
   hora_fim?: string;
   mensagem_fora_horario?: string;
+}
+
+/** Contato gerenciado pelo Maré (adicionar/editar/excluir/importar) — ver aba /contatos. */
+export interface Contact {
+  id: string;
+  nome: string;
+  telefone: string;
+  criado_em: string;
+}
+
+export interface CreateContactPayload {
+  nome: string;
+  telefone: string;
+}
+
+export interface UpdateContactPayload {
+  nome?: string;
+  telefone?: string;
+}
+
+export interface ImportContactsResult {
+  criados: number;
+  ignorados: number;
+}
+
+/**
+ * Passthrough do payload cru da Evolution API (POST /chat/findContacts) —
+ * formato varia entre versões, normalizado em contatos/page.tsx.
+ */
+export type WhatsappContactRaw = Record<string, unknown>;
+
+/**
+ * Nome (só grupo) + foto de perfil ao vivo do WhatsApp de uma conversa —
+ * ver GET /conversations/:id/whatsapp-info. Nunca persistido; usado pelo
+ * componente Avatar/useWhatsappAvatar.
+ */
+export interface WhatsappConversationInfo {
+  nome: string | null;
+  foto_url: string | null;
 }

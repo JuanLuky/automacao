@@ -16,13 +16,16 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   Loader2,
+  Mic,
   MessagesSquare,
   Paperclip,
   Phone,
   Send,
+  Square,
   User as UserIcon,
   X,
 } from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { MediaMessage } from "@/components/ui/MediaMessage";
@@ -33,10 +36,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { useWhatsappAvatar } from "@/hooks/useWhatsappAvatar";
 import {
   EVOLUTION_INSTANCE,
   finishConversation,
   getConversation,
+  getConversationParticipantAvatar,
   getMessages,
   normalizeError,
   sendMessage,
@@ -62,6 +67,10 @@ const MIME_PARA_TIPO: Record<string, MessageTipo> = {
     "documento",
   "video/mp4": "video",
   "video/3gpp": "video",
+  "audio/ogg": "audio",
+  "audio/mpeg": "audio",
+  "audio/mp4": "audio",
+  "audio/webm": "audio",
 };
 const TAMANHO_MAXIMO_BYTES = 15 * 1024 * 1024;
 const LEGENDAS_PADRAO = ["[imagem]", "[áudio]", "[documento]", "[vídeo]"];
@@ -73,12 +82,41 @@ interface AnexoStaged {
   nomeArquivo: string;
 }
 
+// Firefox grava MediaRecorder em ogg/opus nativamente; Chrome/Edge só
+// suportam webm — por isso a ordem de preferência (ver MediaStorageService
+// no backend, que aceita os dois). Se nenhum dos dois for suportado, deixa
+// o navegador escolher (new MediaRecorder(stream) sem mimeType).
+const MIME_TYPES_GRAVACAO = [
+  "audio/ogg;codecs=opus",
+  "audio/webm;codecs=opus",
+  "audio/webm",
+];
+
+function escolherMimeTypeGravacao(): string {
+  if (typeof MediaRecorder === "undefined") return "";
+  return MIME_TYPES_GRAVACAO.find((tipo) => MediaRecorder.isTypeSupported(tipo)) ?? "";
+}
+
+function extensaoPorMimetype(mimetype: string): string {
+  if (mimetype.includes("ogg")) return "ogg";
+  if (mimetype.includes("webm")) return "webm";
+  if (mimetype.includes("mp4")) return "m4a";
+  return "webm";
+}
+
+function formatarDuracao(segundos: number): string {
+  const m = Math.floor(segundos / 60).toString().padStart(2, "0");
+  const s = (segundos % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
 export default function ConversaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const { departments } = useDepartments();
   const { clearUnread } = useNotifications();
+  const { nome: nomeWhatsapp, fotoUrl } = useWhatsappAvatar(id);
 
   const [conversa, setConversa] = useState<Conversation | null | undefined>(
     undefined,
@@ -89,7 +127,18 @@ export default function ConversaPage() {
   const [enviando, setEnviando] = useState(false);
   const [anexo, setAnexo] = useState<AnexoStaged | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [finalizando, setFinalizando] = useState(false);
+
+  const [gravando, setGravando] = useState(false);
+  const [duracaoGravacao, setDuracaoGravacao] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksGravacaoRef = useRef<Blob[]>([]);
+  const streamGravacaoRef = useRef<MediaStream | null>(null);
+  const timerGravacaoRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // "modo" identifica qual dos dois botões do modal (com/sem mensagem)
+  // está em andamento, pro spinner aparecer no botão certo — mesmo padrão
+  // do modal de "Iniciar atendimento" na fila.
+  const [modoFinalizar, setModoFinalizar] = useState<"com_mensagem" | "sem_mensagem" | null>(null);
   const [confirmandoFinalizar, setConfirmandoFinalizar] = useState(false);
 
   const [transferindo, setTransferindo] = useState(false);
@@ -98,6 +147,15 @@ export default function ConversaPage() {
   const [enviandoTransfer, setEnviandoTransfer] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Avatar de quem mandou cada mensagem num grupo (remetente_telefone) —
+  // cacheado por telefone nesta tela pra não refazer a chamada pra cada
+  // mensagem repetida do mesmo participante, só uma vez por pessoa que
+  // aparece na conversa. Ver "Avatares" no CLAUDE.md.
+  const [avataresParticipantes, setAvataresParticipantes] = useState<
+    Record<string, string | null>
+  >({});
+  const telefonesBuscadosRef = useRef<Set<string>>(new Set());
 
   const carregar = useCallback(async () => {
     try {
@@ -127,6 +185,43 @@ export default function ConversaPage() {
       behavior: "smooth",
     });
   }, [mensagens.length]);
+
+  // Busca a foto de cada participante do grupo que ainda não foi buscado
+  // nesta tela (novo telefone aparecendo numa mensagem, ex: mais alguém
+  // escreveu, ou o histórico terminou de carregar).
+  useEffect(() => {
+    if (conversa?.tipo !== "grupo" || !EVOLUTION_INSTANCE) return;
+
+    const telefonesNovos = new Set<string>();
+    for (const m of mensagens) {
+      if (m.origem === "cliente" && m.remetente_telefone) {
+        telefonesNovos.add(m.remetente_telefone);
+      }
+    }
+
+    for (const telefone of Array.from(telefonesNovos)) {
+      if (telefonesBuscadosRef.current.has(telefone)) continue;
+      telefonesBuscadosRef.current.add(telefone);
+
+      getConversationParticipantAvatar(id, EVOLUTION_INSTANCE, telefone)
+        .then(({ foto_url }) => {
+          setAvataresParticipantes((atuais) => ({ ...atuais, [telefone]: foto_url }));
+        })
+        .catch(() => {
+          // silencioso — avatar é adorno, não bloqueia a conversa
+        });
+    }
+  }, [conversa?.tipo, mensagens]);
+
+  // Some enquanto o usuário está numa gravação — solta o microfone e o
+  // timer se o componente desmontar no meio (ex: navegou pra outra
+  // conversa sem parar a gravação).
+  useEffect(() => {
+    return () => {
+      if (timerGravacaoRef.current) clearInterval(timerGravacaoRef.current);
+      streamGravacaoRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
 
   useSocketEvent<Message>("nova_mensagem", (mensagem) => {
     if (mensagem.conversation_id !== id) return;
@@ -181,7 +276,7 @@ export default function ConversaPage() {
 
     const tipo = MIME_PARA_TIPO[file.type];
     if (!tipo) {
-      setErro("Tipo de arquivo não suportado. Envie imagem (JPEG/PNG/WEBP) ou documento (PDF/DOC/XLS).");
+      setErro("Tipo de arquivo não suportado. Envie imagem (JPEG/PNG/WEBP), áudio (MP3/OGG/M4A), vídeo (MP4/3GPP) ou documento (PDF/DOC/XLS).");
       return;
     }
     if (file.size > TAMANHO_MAXIMO_BYTES) {
@@ -200,6 +295,73 @@ export default function ConversaPage() {
     reader.readAsDataURL(file);
   }
 
+  async function iniciarGravacao() {
+    setErro(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamGravacaoRef.current = stream;
+
+      const mimeType = escolherMimeTypeGravacao();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+      chunksGravacaoRef.current = [];
+
+      recorder.ondataavailable = (evento) => {
+        if (evento.data.size > 0) chunksGravacaoRef.current.push(evento.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksGravacaoRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
+        streamGravacaoRef.current?.getTracks().forEach((t) => t.stop());
+        streamGravacaoRef.current = null;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const resultado = reader.result as string;
+          const base64 = resultado.slice(resultado.indexOf(",") + 1);
+          setAnexo({
+            tipo: "audio",
+            base64,
+            mimetype: blob.type,
+            nomeArquivo: `gravacao-${Date.now()}.${extensaoPorMimetype(blob.type)}`,
+          });
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setGravando(true);
+      setDuracaoGravacao(0);
+      timerGravacaoRef.current = setInterval(() => {
+        setDuracaoGravacao((d) => d + 1);
+      }, 1000);
+    } catch {
+      setErro("Não foi possível acessar o microfone. Verifique a permissão do navegador.");
+    }
+  }
+
+  function pararGravacao() {
+    mediaRecorderRef.current?.stop();
+    setGravando(false);
+    if (timerGravacaoRef.current) clearInterval(timerGravacaoRef.current);
+  }
+
+  function cancelarGravacao() {
+    if (mediaRecorderRef.current) {
+      // Troca o handler antes de parar pra não gerar o anexo (onstop só
+      // deve montar o áudio quando o usuário para de propósito).
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+    }
+    streamGravacaoRef.current?.getTracks().forEach((t) => t.stop());
+    streamGravacaoRef.current = null;
+    setGravando(false);
+    if (timerGravacaoRef.current) clearInterval(timerGravacaoRef.current);
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -207,27 +369,29 @@ export default function ConversaPage() {
     }
   }
 
-  async function handleFinalizar() {
-    setFinalizando(true);
+  async function handleFinalizar(comMensagem: boolean) {
+    setModoFinalizar(comMensagem ? "com_mensagem" : "sem_mensagem");
     setErro(null);
     try {
-      // Best-effort: mesmo se o envio da mensagem de encerramento falhar
-      // (ex: WhatsApp fora do ar), a finalização segue — o atendente ainda
-      // quer poder encerrar o atendimento.
-      try {
-        await sendMessage(id, {
-          origem: "atendente",
-          mensagem: MENSAGEM_AUTOMATICA_FINALIZAR,
-          instance: EVOLUTION_INSTANCE,
-        });
-      } catch {
-        // ignora — não bloqueia a finalização
+      if (comMensagem) {
+        // Best-effort: mesmo se o envio da mensagem de encerramento falhar
+        // (ex: WhatsApp fora do ar), a finalização segue — o atendente
+        // ainda quer poder encerrar o atendimento.
+        try {
+          await sendMessage(id, {
+            origem: "atendente",
+            mensagem: MENSAGEM_AUTOMATICA_FINALIZAR,
+            instance: EVOLUTION_INSTANCE,
+          });
+        } catch {
+          // ignora — não bloqueia a finalização
+        }
       }
       await finishConversation(id);
       router.push("/fila");
     } catch (error) {
       setErro(normalizeError(error).message);
-      setFinalizando(false);
+      setModoFinalizar(null);
       setConfirmandoFinalizar(false);
     }
   }
@@ -289,10 +453,19 @@ export default function ConversaPage() {
             <ArrowLeft size={16} />
           </button>
 
+          <Avatar
+            src={fotoUrl}
+            alt={conversa.cliente_nome || nomeWhatsapp || "Conversa"}
+            tipo={conversa.tipo}
+            size={44}
+            className="mt-0.5"
+          />
+
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-display text-lg font-semibold text-primary">
                 {conversa.cliente_nome ||
+                  nomeWhatsapp ||
                   (conversa.tipo === "grupo" ? "Grupo sem nome" : "Cliente sem nome")}
               </h1>
               {conversa.departamento && (
@@ -338,7 +511,7 @@ export default function ConversaPage() {
             <Button
               variant="ghost"
               className="!px-3.5 !py-2 text-[0.8125rem]"
-              loading={finalizando}
+              loading={modoFinalizar !== null}
               onClick={() => setConfirmandoFinalizar(true)}
             >
               <CheckCircle2 size={15} />
@@ -446,6 +619,33 @@ export default function ConversaPage() {
                     ` - ${m.atendente.departamento.nome.toUpperCase()}`}
                 </span>
               )}
+              {/* origem atendente sem atendente vinculado = mensagem mandada
+                  direto do celular conectado, fora do painel (ver
+                  MessagesService.create, origem_externa) */}
+              {m.origem === "atendente" && !m.atendente && (
+                <span className="mb-1 px-1 text-[0.75rem] font-medium text-muted">
+                  Enviado pelo celular
+                </span>
+              )}
+              {/* remetente dentro de um grupo — várias pessoas escrevem na
+                  mesma conversa, então precisa identificar (avatar + nome)
+                  quem mandou cada mensagem (ver "Grupos do WhatsApp" e
+                  "Avatares" no CLAUDE.md) */}
+              {m.origem === "cliente" &&
+                conversa.tipo === "grupo" &&
+                (m.remetente_nome || m.remetente_telefone) && (
+                  <div className="mb-1 flex items-center gap-1.5 px-1">
+                    <Avatar
+                      src={m.remetente_telefone ? avataresParticipantes[m.remetente_telefone] : null}
+                      alt={m.remetente_nome || m.remetente_telefone || "Participante"}
+                      tipo="cliente"
+                      size={18}
+                    />
+                    <span className="text-[0.75rem] font-semibold text-secondary">
+                      {m.remetente_nome || m.remetente_telefone}
+                    </span>
+                  </div>
+                )}
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[0.875rem] leading-relaxed ${
                   m.origem === "atendente"
@@ -480,8 +680,18 @@ export default function ConversaPage() {
 
       {anexo && (
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-app bg-sunken px-3 py-2 text-[0.8125rem] text-secondary">
-          <Paperclip size={14} className="shrink-0" />
-          <span className="truncate">{anexo.nomeArquivo}</span>
+          {anexo.tipo === "audio" ? (
+            <audio
+              controls
+              className="h-9 max-w-full flex-1"
+              src={`data:${anexo.mimetype};base64,${anexo.base64}`}
+            />
+          ) : (
+            <>
+              <Paperclip size={14} className="shrink-0" />
+              <span className="truncate">{anexo.nomeArquivo}</span>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setAnexo(null)}
@@ -495,45 +705,86 @@ export default function ConversaPage() {
 
       <form onSubmit={handleEnviar} className={`flex items-end gap-3 ${anexo ? "mt-2" : "mt-4"}`}>
         <QuickReplies
-          disabled={!podeResponder}
+          disabled={!podeResponder || gravando}
           onSelect={(template) =>
             setTexto(resolverTemplate(template, user?.nome ?? ""))
           }
         />
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,video/mp4,video/3gpp"
-          onChange={handleSelecionarArquivo}
-          disabled={!podeResponder}
-          className="hidden"
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={!podeResponder}
-          aria-label="Anexar arquivo"
-          className="rounded-xl border border-app p-3.5 text-secondary transition-colors hover:border-mist-500 hover:text-primary disabled:cursor-not-allowed disabled:opacity-55"
-        >
-          <Paperclip size={17} />
-        </button>
-        <textarea
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={!podeResponder || enviando}
-          placeholder={
-            podeResponder
-              ? "Escreva uma mensagem..."
-              : "Esta conversa não está mais em atendimento."
-          }
-          rows={1}
-          className="max-h-32 flex-1 resize-none rounded-xl border border-app bg-sunken px-4 py-3.5 text-[0.9375rem] text-primary placeholder:text-muted/60 focus:border-tide-500 focus:bg-raised focus:outline-none focus:ring-4 focus:ring-tide-500/12 disabled:cursor-not-allowed disabled:opacity-55"
-        />
+
+        {gravando ? (
+          <div className="flex flex-1 items-center gap-3 rounded-xl border border-alert/40 bg-alert/8 px-4 py-3.5">
+            <span
+              className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-alert"
+              aria-hidden="true"
+            />
+            <span className="text-[0.9375rem] text-primary">
+              Gravando áudio... {formatarDuracao(duracaoGravacao)}
+            </span>
+            <button
+              type="button"
+              onClick={cancelarGravacao}
+              aria-label="Cancelar gravação"
+              className="ml-auto rounded-lg p-2 text-muted transition-colors hover:text-primary"
+            >
+              <X size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={pararGravacao}
+              aria-label="Parar gravação"
+              className="rounded-lg bg-tide-500 p-2 text-abyss-900 transition-opacity hover:opacity-90"
+            >
+              <Square size={16} />
+            </button>
+          </div>
+        ) : (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,video/mp4,video/3gpp,audio/ogg,audio/mpeg,audio/mp4"
+              onChange={handleSelecionarArquivo}
+              disabled={!podeResponder}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!podeResponder}
+              aria-label="Anexar arquivo"
+              className="rounded-xl border border-app p-3.5 text-secondary transition-colors hover:border-mist-500 hover:text-primary disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              <Paperclip size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={iniciarGravacao}
+              disabled={!podeResponder}
+              aria-label="Gravar áudio"
+              className="rounded-xl border border-app p-3.5 text-secondary transition-colors hover:border-mist-500 hover:text-primary disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              <Mic size={17} />
+            </button>
+            <textarea
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={!podeResponder || enviando}
+              placeholder={
+                podeResponder
+                  ? "Escreva uma mensagem..."
+                  : "Esta conversa não está mais em atendimento."
+              }
+              rows={1}
+              className="max-h-32 flex-1 resize-none rounded-xl border border-app bg-sunken px-4 py-3.5 text-[0.9375rem] text-primary placeholder:text-muted/60 focus:border-tide-500 focus:bg-raised focus:outline-none focus:ring-4 focus:ring-tide-500/12 disabled:cursor-not-allowed disabled:opacity-55"
+            />
+          </>
+        )}
+
         <Button
           type="submit"
           loading={enviando}
-          disabled={!podeResponder || (!texto.trim() && !anexo)}
+          disabled={!podeResponder || gravando || (!texto.trim() && !anexo)}
           className="!px-4 !py-3.5"
         >
           <Send size={17} />
@@ -543,10 +794,13 @@ export default function ConversaPage() {
       <ConfirmModal
         open={confirmandoFinalizar}
         title="Finalizar esta conversa?"
-        description="O atendimento será encerrado e não poderá mais receber mensagens."
-        confirmLabel="Finalizar"
-        loading={finalizando}
-        onConfirm={handleFinalizar}
+        description="O atendimento será encerrado e não poderá mais receber mensagens. Pode encerrar com uma mensagem de despedida automática, ou sem enviar nada."
+        confirmLabel="Finalizar com mensagem"
+        secondaryLabel="Finalizar sem mensagem"
+        loading={modoFinalizar === "com_mensagem"}
+        secondaryLoading={modoFinalizar === "sem_mensagem"}
+        onConfirm={() => handleFinalizar(true)}
+        onSecondary={() => handleFinalizar(false)}
         onCancel={() => setConfirmandoFinalizar(false)}
       />
     </div>

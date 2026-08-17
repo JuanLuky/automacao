@@ -22,10 +22,14 @@ const LEGENDA_PADRAO_POR_TIPO: Record<string, string> = {
   [MessageTipo.VIDEO]: "[vídeo]",
 };
 
-const MEDIATYPE_EVOLUTION_POR_TIPO: Record<string, "image" | "document" | "video"> = {
+const MEDIATYPE_EVOLUTION_POR_TIPO: Record<
+  string,
+  "image" | "document" | "video" | "audio"
+> = {
   [MessageTipo.IMAGEM]: "image",
   [MessageTipo.DOCUMENTO]: "document",
   [MessageTipo.VIDEO]: "video",
+  [MessageTipo.AUDIO]: "audio",
 };
 
 type MessageSemSenha = Omit<Message, "atendente"> & {
@@ -95,6 +99,21 @@ export class MessagesService {
     conversationId: string,
     dto: CreateMessageDto,
   ): Promise<MessageSemSenha> {
+    // Dedup: o n8n manda evolution_message_id quando registra uma mensagem
+    // "fromMe" vinda do webhook — se já existe uma mensagem com esse mesmo
+    // id (eco de uma mensagem que o próprio painel acabou de enviar, ver
+    // bloco de envio mais abaixo), devolve ela sem criar duplicata nem
+    // reemitir o evento de socket.
+    if (dto.evolution_message_id) {
+      const existente = await this.messagesRepository.findOne({
+        where: { evolution_message_id: dto.evolution_message_id },
+        relations: ["atendente", "atendente.departamento"],
+      });
+      if (existente) {
+        return { ...existente, atendente: semSenha(existente.atendente) };
+      }
+    }
+
     const conversa = await this.conversationsRepository.findOne({
       where: { id: conversationId },
       relations: ["atendente", "atendente.departamento"],
@@ -105,22 +124,17 @@ export class MessagesService {
     }
 
     const tipo = dto.tipo ?? MessageTipo.TEXTO;
-    if (tipo === MessageTipo.AUDIO && dto.origem === MessageOrigin.ATENDENTE) {
-      // v1 só recebe áudio do cliente — atendente manda imagem/documento,
-      // gravar/enviar nota de voz pelo painel fica fora de escopo.
-      throw new BadRequestException(
-        "Envio de áudio pelo atendente não é suportado.",
-      );
-    }
 
     // Quem está "respondendo agora": pra conversa de cliente é sempre quem
     // está com ela assumida (não existe seleção de atendente no payload —
     // rota também é chamada pelo n8n, sem noção de usuário logado). Grupo
     // não tem "assumir", então não tem um atendente_id na conversa — quem
     // está respondendo precisa vir explícito no payload (o painel manda o
-    // id do usuário logado, ver conversas/[id]/page.tsx).
+    // id do usuário logado, ver conversas/[id]/page.tsx). Mensagem
+    // origem_externa (enviada direto do celular, fora do painel) não tem
+    // remetente conhecido de propósito — ver CreateMessageDto.
     let remetente: User | null = null;
-    if (dto.origem === MessageOrigin.ATENDENTE) {
+    if (dto.origem === MessageOrigin.ATENDENTE && !dto.origem_externa) {
       if (conversa.tipo === ConversationTipo.GRUPO) {
         if (!dto.atendente_id) {
           throw new BadRequestException(
@@ -173,6 +187,14 @@ export class MessagesService {
         midia_mimetype: midiaPath ? dto.midia_mimetype ?? null : null,
         midia_nome_arquivo: midiaPath ? dto.midia_nome_arquivo ?? null : null,
         atendente_id: remetente ? remetente.id : null,
+        // origem_externa já vem com o id da mensagem no WhatsApp (o n8n tira
+        // do próprio webhook); mensagem enviada pelo painel só ganha o dela
+        // depois, a partir do retorno da Evolution API (ver bloco abaixo).
+        evolution_message_id: dto.origem_externa
+          ? dto.evolution_message_id ?? null
+          : null,
+        remetente_nome: dto.remetente_nome ?? null,
+        remetente_telefone: dto.remetente_telefone ?? null,
       }),
     );
 
@@ -182,10 +204,12 @@ export class MessagesService {
       mensagem.atendente = remetente;
     }
 
-    // Só dispara envio real ao WhatsApp quando é o atendente respondendo.
-    // Mensagens de origem "cliente" já chegaram pelo WhatsApp (via n8n) —
-    // reenviá-las de volta seria um eco.
-    if (dto.origem === MessageOrigin.ATENDENTE) {
+    // Só dispara envio real ao WhatsApp quando é o atendente respondendo
+    // pelo painel de verdade. Mensagens de origem "cliente" já chegaram
+    // pelo WhatsApp (via n8n) — reenviá-las de volta seria um eco.
+    // Mensagem origem_externa já foi entregue fora do sistema (mandada
+    // direto do celular conectado) — só registra no histórico, não envia.
+    if (dto.origem === MessageOrigin.ATENDENTE && !dto.origem_externa) {
       if (!dto.instance) {
         throw new BadRequestException(
           'Campo "instance" é obrigatório para mensagens do atendente.',
@@ -217,33 +241,48 @@ export class MessagesService {
         ? `${assinatura}\n\n${textoExibicao}`
         : textoExibicao;
 
-      if (
-        tipo !== MessageTipo.TEXTO &&
-        dto.midia_base64 &&
-        dto.midia_mimetype
-      ) {
-        await this.evolutionService.enviarMidia(dto.instance, conversa.telefone, {
-          mediatype: MEDIATYPE_EVOLUTION_POR_TIPO[tipo] ?? "document",
-          mimetype: dto.midia_mimetype,
-          caption: textoWhatsapp,
-          fileName: dto.midia_nome_arquivo,
-          mediaBase64: dto.midia_base64,
+      const enviada =
+        tipo !== MessageTipo.TEXTO && dto.midia_base64 && dto.midia_mimetype
+          ? await this.evolutionService.enviarMidia(
+              dto.instance,
+              conversa.telefone,
+              {
+                mediatype: MEDIATYPE_EVOLUTION_POR_TIPO[tipo] ?? "document",
+                mimetype: dto.midia_mimetype,
+                caption: textoWhatsapp,
+                fileName: dto.midia_nome_arquivo,
+                mediaBase64: dto.midia_base64,
+              },
+            )
+          : await this.evolutionService.enviarMensagem(
+              dto.instance,
+              conversa.telefone,
+              textoWhatsapp,
+            );
+
+      // Guarda o id que a Evolution API devolveu pra essa mensagem — é o
+      // que permite reconhecer o eco dela (webhook "fromMe") mais tarde e
+      // não duplicar no histórico (ver dedup no início deste método).
+      if (enviada.id) {
+        mensagem.evolution_message_id = enviada.id;
+        await this.messagesRepository.update(mensagem.id, {
+          evolution_message_id: enviada.id,
         });
-      } else {
-        await this.evolutionService.enviarMensagem(
-          dto.instance,
-          conversa.telefone,
-          textoWhatsapp,
-        );
       }
     }
 
     // cliente_nome/conversa_atendente_id só existem no payload do socket (não
     // persistidos em Message) — dão pro frontend montar a notificação
     // ("Nova mensagem de Fulano") e decidir de quem é a conversa sem precisar
-    // buscar isso separadamente. midia_path fica de fora — é implementação
-    // interna do storage; o frontend busca o arquivo pelo endpoint dedicado.
-    const { midia_path: _midiaPath, atendente, ...mensagemSemPath } = mensagem;
+    // buscar isso separadamente. midia_path/evolution_message_id ficam de
+    // fora — são implementação interna (storage e dedup, respectivamente),
+    // sem uso nenhum no frontend.
+    const {
+      midia_path: _midiaPath,
+      evolution_message_id: _evolutionMessageId,
+      atendente,
+      ...mensagemSemPath
+    } = mensagem;
     const atendenteSemSenha = semSenha(atendente);
     this.eventsGateway.emitNovaMensagem({
       ...mensagemSemPath,

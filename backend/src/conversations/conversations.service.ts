@@ -12,6 +12,7 @@ import { CreateConversationDto } from './dto/create-conversation.dto';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { Message, MessageOrigin } from '../messages/entities/message.entity';
 import { EventsGateway } from '../websocket/events.gateway';
+import { EvolutionService } from '../integrations/evolution/evolution.service';
 
 function inicioDoDiaLocal(dataIso: string): Date {
   const [ano, mes, dia] = dataIso.split('-').map(Number);
@@ -31,6 +32,7 @@ export class ConversationsService {
     @InjectRepository(Message)
     private readonly messagesRepository: Repository<Message>,
     private readonly eventsGateway: EventsGateway,
+    private readonly evolutionService: EvolutionService,
   ) {}
 
   // Sem "pagina"/"por_pagina" devolve o array completo (comportamento
@@ -167,6 +169,71 @@ export class ConversationsService {
   // quanto grupo).
   async buscarPorId(id: string): Promise<Conversation> {
     return this.buscarOuFalhar(id);
+  }
+
+  // Nome + foto ao vivo do WhatsApp — nunca persistido (mesmo espírito de
+  // ContactsController.whatsapp, ver "Contatos" no CLAUDE.md): grupo usa
+  // findGroupInfos (nome = subject, o cliente_nome salvo na criação da
+  // conversa costuma ficar vazio pra grupo — não fazia parte do escopo até
+  // aqui); conversa 1:1 já tem o nome salvo desde a criação (pushName),
+  // então só busca a foto de perfil aqui.
+  async buscarInfoWhatsapp(
+    id: string,
+    instance: string,
+  ): Promise<{ nome: string | null; foto_url: string | null }> {
+    const conversa = await this.buscarOuFalhar(id);
+
+    if (conversa.tipo === ConversationTipo.GRUPO) {
+      const info = await this.evolutionService.getGroupInfo(instance, conversa.telefone);
+      return {
+        nome: (info?.subject as string) ?? null,
+        foto_url: (info?.pictureUrl as string) ?? null,
+      };
+    }
+
+    const info = await this.evolutionService.getProfilePictureUrl(
+      instance,
+      conversa.telefone,
+    );
+    return {
+      nome: null,
+      foto_url: (info?.profilePictureUrl as string) ?? null,
+    };
+  }
+
+  // Foto de perfil de quem escreveu uma mensagem dentro de um grupo.
+  // Message.remetente_telefone vem do "participant" do webhook da
+  // Evolution API — em grupos com "addressingMode: lid" (modo de
+  // privacidade mais novo do WhatsApp) isso é um "lid" (id vinculado),
+  // não o telefone de verdade, e a Evolution API não acha foto de perfil
+  // buscando por um lid. `GET /group/findGroupInfos` devolve os dois por
+  // participante (`id` = lid, `phoneNumber` = telefone real) — resolve
+  // aqui antes de buscar a foto. Se não achar o participante na lista
+  // (grupo sem "lid", ou participante saiu do grupo), tenta o valor
+  // recebido direto como fallback.
+  async buscarAvatarParticipante(
+    id: string,
+    instance: string,
+    participante: string,
+  ): Promise<{ foto_url: string | null }> {
+    const conversa = await this.buscarOuFalhar(id);
+
+    let numero = participante;
+    if (conversa.tipo === ConversationTipo.GRUPO) {
+      const grupoInfo = await this.evolutionService.getGroupInfo(instance, conversa.telefone);
+      const participantes =
+        (grupoInfo?.participants as Array<Record<string, unknown>>) ?? [];
+      const encontrado = participantes.find(
+        (p) => (p.id as string | undefined)?.split('@')[0] === participante,
+      );
+      const telefoneReal = (encontrado?.phoneNumber as string | undefined)?.split('@')[0];
+      if (telefoneReal) {
+        numero = telefoneReal;
+      }
+    }
+
+    const info = await this.evolutionService.getProfilePictureUrl(instance, numero);
+    return { foto_url: (info?.profilePictureUrl as string) ?? null };
   }
 
   async assumir(id: string, atendenteId: string): Promise<Conversation> {

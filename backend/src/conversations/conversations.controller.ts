@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -51,6 +52,34 @@ export class ConversationsController {
   @Get(':id')
   buscarPorId(@Param('id') id: string) {
     return this.conversationsService.buscarPorId(id);
+  }
+
+  // Nome/foto ao vivo do WhatsApp (grupo) ou só foto (cliente, o nome já
+  // vem salvo na conversa) — usado pelos avatares na fila/grupos/chat. Ver
+  // ConversationsService.buscarInfoWhatsapp.
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/whatsapp-info')
+  buscarInfoWhatsapp(@Param('id') id: string, @Query('instance') instance: string) {
+    if (!instance) {
+      throw new BadRequestException('Campo "instance" é obrigatório.');
+    }
+    return this.conversationsService.buscarInfoWhatsapp(id, instance);
+  }
+
+  // Foto de quem escreveu uma mensagem dentro do grupo — resolve "lid" pra
+  // telefone real via a lista de participantes do grupo antes de buscar a
+  // foto (ver ConversationsService.buscarAvatarParticipante).
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/participant-avatar')
+  buscarAvatarParticipante(
+    @Param('id') id: string,
+    @Query('instance') instance: string,
+    @Query('participante') participante: string,
+  ) {
+    if (!instance || !participante) {
+      throw new BadRequestException('Campos "instance" e "participante" são obrigatórios.');
+    }
+    return this.conversationsService.buscarAvatarParticipante(id, instance, participante);
   }
 
   // Rota usada pelo n8n para checar se já existe conversa em aberto.

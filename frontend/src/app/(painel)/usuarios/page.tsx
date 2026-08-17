@@ -259,6 +259,7 @@ export default function UsuariosPage() {
               onChange={(e) => setRole(e.target.value as UserRole)}
             >
               <option value="atendente">Atendente</option>
+              <option value="supervisor">Supervisor</option>
               <option value="admin">Administrador</option>
             </Select>
           </div>
@@ -323,10 +324,16 @@ export default function UsuariosPage() {
                     className={`rounded-full px-2.5 py-1 text-[0.75rem] font-medium ${
                       u.role === "admin"
                         ? "bg-tide-500/12 text-tide-500"
-                        : "bg-sunken text-secondary"
+                        : u.role === "supervisor"
+                          ? "bg-waiting/12 text-waiting"
+                          : "bg-sunken text-secondary"
                     }`}
                   >
-                    {u.role === "admin" ? "Administrador" : "Atendente"}
+                    {u.role === "admin"
+                      ? "Administrador"
+                      : u.role === "supervisor"
+                        ? "Supervisor"
+                        : "Atendente"}
                   </span>
                   {!u.ativo && (
                     <span className="rounded-full bg-alert/12 px-2.5 py-1 text-[0.75rem] font-medium text-alert">

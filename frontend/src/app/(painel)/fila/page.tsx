@@ -12,13 +12,18 @@ import {
   Search,
   User as UserIcon,
 } from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { Switch } from "@/components/ui/Switch";
 import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { useVerTodosSetores } from "@/hooks/useVerTodosSetores";
+import { useWhatsappAvatar } from "@/hooks/useWhatsappAvatar";
 import {
   assumeConversation,
   EVOLUTION_INSTANCE,
@@ -36,6 +41,87 @@ const TABS: { status: ConversationStatus; label: string }[] = [
   { status: "finalizado", label: "Finalizadas" },
 ];
 
+interface ConversaItemProps {
+  conversa: Conversation;
+  tab: ConversationStatus;
+  naoLidas: number;
+  onAssumir: () => void;
+  onAbrir: () => void;
+}
+
+// Componente próprio (em vez de inline no .map()) só pra poder chamar
+// useWhatsappAvatar por linha — cada card busca sua própria foto ao vivo
+// do WhatsApp, independente dos outros (ver "Avatares" no CLAUDE.md).
+function ConversaItem({
+  conversa: c,
+  tab,
+  naoLidas,
+  onAssumir,
+  onAbrir,
+}: ConversaItemProps) {
+  const { fotoUrl } = useWhatsappAvatar(c.id);
+
+  return (
+    <li className="animate-queue-in rounded-xl border border-app bg-raised p-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar src={fotoUrl} alt={c.cliente_nome ?? "Cliente"} tipo="cliente" />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-primary">
+                {c.cliente_nome || "Cliente sem nome"}
+              </span>
+              {c.departamento && (
+                <span className="text-eyebrow font-semibold uppercase text-tide-400">
+                  {c.departamento.nome}
+                </span>
+              )}
+              {naoLidas > 0 && (
+                <span
+                  className="flex h-5 min-w-5 items-center justify-center rounded-full bg-alert px-1.5 text-[0.6875rem] font-semibold text-white"
+                  aria-label={`${naoLidas} mensagens não lidas`}
+                >
+                  {naoLidas}
+                </span>
+              )}
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem] text-secondary">
+              <span className="flex items-center gap-1">
+                <Phone size={13} />
+                {c.telefone}
+              </span>
+              <span>{formatRelativeTime(c.criado_em)}</span>
+              {c.atendente && (
+                <span className="flex items-center gap-1">
+                  <UserIcon size={13} />
+                  {c.atendente.nome}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <StatusBadge status={c.status} />
+          {tab === "aguardando" ? (
+            <Button
+              variant="primary"
+              className="!px-4 !py-2 text-[0.8125rem]"
+              onClick={onAssumir}
+            >
+              Assumir
+            </Button>
+          ) : (
+            <Button variant="ghost" className="!px-4 !py-2 text-[0.8125rem]" onClick={onAbrir}>
+              Abrir
+            </Button>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
 const POR_PAGINA = 5;
 
 export default function FilaPage() {
@@ -45,6 +131,12 @@ export default function FilaPage() {
   const { unreadByConversation } = useNotifications();
 
   const isAdmin = user?.role === "admin";
+  const isSupervisor = user?.role === "supervisor";
+  const { verTodos, setVerTodos } = useVerTodosSetores();
+  // Admin sempre vê tudo; supervisor só quando o toggle está ligado (ver
+  // "Regras de negócio no frontend" no CLAUDE.md — confiança client-side,
+  // mesmo padrão já usado pro admin).
+  const podeVerTodos = isAdmin || (isSupervisor && verTodos);
   const [tab, setTab] = useState<ConversationStatus>("aguardando");
   const [departamentoId, setDepartamentoId] = useState("");
   const [conversas, setConversas] = useState<Conversation[]>([]);
@@ -52,7 +144,13 @@ export default function FilaPage() {
   const [pagina, setPagina] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [assumindoId, setAssumindoId] = useState<string | null>(null);
+
+  // Modal de "Iniciar atendimento?" — pergunta se manda a mensagem de
+  // apresentação automática ou não, em vez de mandar sempre sem perguntar
+  // (comportamento antigo). "modo" identifica qual dos dois botões está em
+  // andamento, pro spinner aparecer no botão certo.
+  const [iniciandoConversa, setIniciandoConversa] = useState<Conversation | null>(null);
+  const [modoIniciar, setModoIniciar] = useState<"com_mensagem" | "sem_mensagem" | null>(null);
 
   // Busca só faz sentido na aba "Finalizadas" — nas outras a lista já é
   // pequena o bastante pra não precisar filtrar.
@@ -66,8 +164,8 @@ export default function FilaPage() {
     return () => clearTimeout(timer);
   }, [busca]);
 
-  const semSetor = !isAdmin && !user?.departamento_id;
-  const filtroDepartamento = isAdmin ? departamentoId || undefined : user?.departamento_id;
+  const semSetor = !podeVerTodos && !user?.departamento_id;
+  const filtroDepartamento = podeVerTodos ? departamentoId || undefined : user?.departamento_id;
   const isFinalizadas = tab === "finalizado";
 
   // Trocar de aba ou de filtro invalida a página atual — sempre volta pra 1.
@@ -128,29 +226,35 @@ export default function FilaPage() {
   useSocketEvent("conversa_atualizada", carregar);
   useSocketEvent("conversa_finalizada", carregar);
 
-  async function handleAssumir(id: string) {
-    setAssumindoId(id);
+  async function handleConfirmarIniciar(comMensagem: boolean) {
+    if (!iniciandoConversa) return;
+    const id = iniciandoConversa.id;
+
+    setModoIniciar(comMensagem ? "com_mensagem" : "sem_mensagem");
     setErro(null);
     try {
       await assumeConversation(id);
-      // Best-effort: mesmo se o envio da mensagem de abertura falhar (ex:
-      // WhatsApp fora do ar), o atendimento já foi assumido e a navegação
-      // segue normalmente.
-      try {
-        await sendMessage(id, {
-          origem: "atendente",
-          mensagem: mensagemAutomaticaAssumir(user?.nome ?? ""),
-          instance: EVOLUTION_INSTANCE,
-        });
-      } catch {
-        // ignora — não bloqueia a navegação
+      if (comMensagem) {
+        // Best-effort: mesmo se o envio da mensagem de abertura falhar (ex:
+        // WhatsApp fora do ar), o atendimento já foi assumido e a
+        // navegação segue normalmente.
+        try {
+          await sendMessage(id, {
+            origem: "atendente",
+            mensagem: mensagemAutomaticaAssumir(user?.nome ?? ""),
+            instance: EVOLUTION_INSTANCE,
+          });
+        } catch {
+          // ignora — não bloqueia a navegação
+        }
       }
       router.push(`/conversas/${id}`);
     } catch (error) {
       setErro(normalizeError(error).message);
       carregar();
     } finally {
-      setAssumindoId(null);
+      setModoIniciar(null);
+      setIniciandoConversa(null);
     }
   }
 
@@ -162,22 +266,30 @@ export default function FilaPage() {
           <h1 className="mt-2 font-display text-display-md font-semibold text-primary">Fila</h1>
         </div>
 
-        {isAdmin && (
-          <div className="w-full max-w-[240px] sm:w-auto">
-            <Select
-              aria-label="Filtrar por setor"
-              value={departamentoId}
-              onChange={(e) => setDepartamentoId(e.target.value)}
-            >
-              <option value="">Todos os setores</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.nome}
-                </option>
-              ))}
-            </Select>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-4">
+          {isSupervisor && (
+            <label className="flex items-center gap-2.5 text-[0.8125rem] text-secondary">
+              <Switch checked={verTodos} onChange={setVerTodos} label="Ver todos os setores" />
+              Ver todos os setores
+            </label>
+          )}
+          {podeVerTodos && (
+            <div className="w-full max-w-[240px] sm:w-auto">
+              <Select
+                aria-label="Filtrar por setor"
+                value={departamentoId}
+                onChange={(e) => setDepartamentoId(e.target.value)}
+              >
+                <option value="">Todos os setores</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nome}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="mb-6 flex gap-1 border-b border-app">
@@ -274,68 +386,14 @@ export default function FilaPage() {
       ) : (
         <ul className="space-y-3">
           {conversas.map((c) => (
-            <li
+            <ConversaItem
               key={c.id}
-              className="animate-queue-in rounded-xl border border-app bg-raised p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-primary">
-                      {c.cliente_nome || "Cliente sem nome"}
-                    </span>
-                    {c.departamento && (
-                      <span className="text-eyebrow font-semibold uppercase text-tide-400">
-                        {c.departamento.nome}
-                      </span>
-                    )}
-                    {unreadByConversation[c.id] > 0 && (
-                      <span
-                        className="flex h-5 min-w-5 items-center justify-center rounded-full bg-alert px-1.5 text-[0.6875rem] font-semibold text-white"
-                        aria-label={`${unreadByConversation[c.id]} mensagens não lidas`}
-                      >
-                        {unreadByConversation[c.id]}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem] text-secondary">
-                    <span className="flex items-center gap-1">
-                      <Phone size={13} />
-                      {c.telefone}
-                    </span>
-                    <span>{formatRelativeTime(c.criado_em)}</span>
-                    {c.atendente && (
-                      <span className="flex items-center gap-1">
-                        <UserIcon size={13} />
-                        {c.atendente.nome}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <StatusBadge status={c.status} />
-                  {tab === "aguardando" ? (
-                    <Button
-                      variant="primary"
-                      className="!px-4 !py-2 text-[0.8125rem]"
-                      loading={assumindoId === c.id}
-                      onClick={() => handleAssumir(c.id)}
-                    >
-                      Assumir
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      className="!px-4 !py-2 text-[0.8125rem]"
-                      onClick={() => router.push(`/conversas/${c.id}`)}
-                    >
-                      Abrir
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </li>
+              conversa={c}
+              tab={tab}
+              naoLidas={unreadByConversation[c.id] ?? 0}
+              onAssumir={() => setIniciandoConversa(c)}
+              onAbrir={() => router.push(`/conversas/${c.id}`)}
+            />
           ))}
         </ul>
       )}
@@ -367,6 +425,22 @@ export default function FilaPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={iniciandoConversa !== null}
+        title="Iniciar atendimento?"
+        description={`Você vai assumir a conversa com ${
+          iniciandoConversa?.cliente_nome || "esse cliente"
+        }. Pode começar com uma mensagem de apresentação automática, ou assumir sem enviar nada.`}
+        confirmLabel="Iniciar com mensagem"
+        secondaryLabel="Iniciar sem mensagem"
+        cancelLabel="Cancelar"
+        loading={modoIniciar === "com_mensagem"}
+        secondaryLoading={modoIniciar === "sem_mensagem"}
+        onConfirm={() => handleConfirmarIniciar(true)}
+        onSecondary={() => handleConfirmarIniciar(false)}
+        onCancel={() => setIniciandoConversa(null)}
+      />
     </div>
   );
 }

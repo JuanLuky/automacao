@@ -2,14 +2,17 @@ import axios, { AxiosError } from "axios";
 import type {
   ApiError,
   BusinessHours,
-  Conversation,
+  Contact,
   ConversationsPaginado,
+  Conversation,
   ConversationStatus,
   ConversationTipo,
+  CreateContactPayload,
   CreateDepartmentPayload,
   CreateStatusUpdatePayload,
   CreateUserPayload,
   Department,
+  ImportContactsResult,
   LoginPayload,
   LoginResponse,
   Message,
@@ -18,9 +21,12 @@ import type {
   StatusUpdate,
   TransferPayload,
   UpdateBusinessHoursPayload,
+  UpdateContactPayload,
   UpdateDepartmentPayload,
   UpdateUserPayload,
   User,
+  WhatsappContactRaw,
+  WhatsappConversationInfo,
   WhatsappQrCode,
   WhatsappStatus,
 } from "@/types";
@@ -187,6 +193,36 @@ export async function getConversationsPaginado(filtros: {
   return data;
 }
 
+/**
+ * Foto de quem escreveu uma mensagem dentro de um grupo — resolve "lid"
+ * (id vinculado, ver Message.remetente_telefone) pro telefone real via a
+ * lista de participantes do grupo antes de buscar a foto (por isso
+ * precisa da conversa/grupo, não só do número).
+ */
+export async function getConversationParticipantAvatar(
+  conversationId: string,
+  instance: string,
+  participante: string,
+): Promise<{ foto_url: string | null }> {
+  const { data } = await api.get<{ foto_url: string | null }>(
+    `/conversations/${conversationId}/participant-avatar`,
+    { params: { instance, participante } },
+  );
+  return data;
+}
+
+/** Nome (só grupo)/foto ao vivo do WhatsApp — nunca cacheado no backend. */
+export async function getConversationWhatsappInfo(
+  id: string,
+  instance: string,
+): Promise<WhatsappConversationInfo> {
+  const { data } = await api.get<WhatsappConversationInfo>(
+    `/conversations/${id}/whatsapp-info`,
+    { params: { instance } },
+  );
+  return data;
+}
+
 export async function getConversation(id: string): Promise<Conversation | null> {
   try {
     const { data } = await api.get<Conversation>(`/conversations/${id}`);
@@ -326,5 +362,48 @@ export async function updateBusinessHours(
   payload: UpdateBusinessHoursPayload,
 ): Promise<BusinessHours> {
   const { data } = await api.patch<BusinessHours>("/business-hours", payload);
+  return data;
+}
+
+/** Busca ao vivo na Evolution API (findContacts) — nunca cacheado no backend. */
+export async function getWhatsappContacts(
+  instance: string,
+): Promise<WhatsappContactRaw[]> {
+  const { data } = await api.get<WhatsappContactRaw[]>("/contacts/whatsapp", {
+    params: { instance },
+  });
+  return data;
+}
+
+export async function getContacts(): Promise<Contact[]> {
+  const { data } = await api.get<Contact[]>("/contacts");
+  return data;
+}
+
+export async function createContact(
+  payload: CreateContactPayload,
+): Promise<Contact> {
+  const { data } = await api.post<Contact>("/contacts", payload);
+  return data;
+}
+
+export async function updateContact(
+  id: string,
+  payload: UpdateContactPayload,
+): Promise<Contact> {
+  const { data } = await api.patch<Contact>(`/contacts/${id}`, payload);
+  return data;
+}
+
+export async function deleteContact(id: string): Promise<void> {
+  await api.delete(`/contacts/${id}`);
+}
+
+export async function importContacts(
+  contatos: CreateContactPayload[],
+): Promise<ImportContactsResult> {
+  const { data } = await api.post<ImportContactsResult>("/contacts/import", {
+    contatos,
+  });
   return data;
 }
