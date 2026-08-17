@@ -62,6 +62,9 @@ const MIME_PARA_TIPO: Record<string, MessageTipo> = {
     "documento",
   "video/mp4": "video",
   "video/3gpp": "video",
+  "audio/ogg": "audio",
+  "audio/mpeg": "audio",
+  "audio/mp4": "audio",
 };
 const TAMANHO_MAXIMO_BYTES = 15 * 1024 * 1024;
 const LEGENDAS_PADRAO = ["[imagem]", "[áudio]", "[documento]", "[vídeo]"];
@@ -181,7 +184,7 @@ export default function ConversaPage() {
 
     const tipo = MIME_PARA_TIPO[file.type];
     if (!tipo) {
-      setErro("Tipo de arquivo não suportado. Envie imagem (JPEG/PNG/WEBP) ou documento (PDF/DOC/XLS).");
+      setErro("Tipo de arquivo não suportado. Envie imagem (JPEG/PNG/WEBP), áudio (MP3/OGG/M4A), vídeo (MP4/3GPP) ou documento (PDF/DOC/XLS).");
       return;
     }
     if (file.size > TAMANHO_MAXIMO_BYTES) {
@@ -446,6 +449,24 @@ export default function ConversaPage() {
                     ` - ${m.atendente.departamento.nome.toUpperCase()}`}
                 </span>
               )}
+              {/* origem atendente sem atendente vinculado = mensagem mandada
+                  direto do celular conectado, fora do painel (ver
+                  MessagesService.create, origem_externa) */}
+              {m.origem === "atendente" && !m.atendente && (
+                <span className="mb-1 px-1 text-[0.75rem] font-medium text-muted">
+                  Enviado pelo celular
+                </span>
+              )}
+              {/* remetente dentro de um grupo — várias pessoas escrevem na
+                  mesma conversa, então precisa identificar quem mandou cada
+                  mensagem (ver "Grupos do WhatsApp" no CLAUDE.md) */}
+              {m.origem === "cliente" &&
+                conversa.tipo === "grupo" &&
+                (m.remetente_nome || m.remetente_telefone) && (
+                  <span className="mb-1 px-1 text-[0.75rem] font-semibold text-secondary">
+                    {m.remetente_nome || m.remetente_telefone}
+                  </span>
+                )}
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[0.875rem] leading-relaxed ${
                   m.origem === "atendente"
@@ -503,7 +524,7 @@ export default function ConversaPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,video/mp4,video/3gpp"
+          accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,video/mp4,video/3gpp,audio/ogg,audio/mpeg,audio/mp4"
           onChange={handleSelecionarArquivo}
           disabled={!podeResponder}
           className="hidden"

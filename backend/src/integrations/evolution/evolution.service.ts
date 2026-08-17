@@ -8,11 +8,18 @@ import { ConfigService } from '@nestjs/config';
 export class EvolutionService {
   constructor(private readonly configService: ConfigService) {}
 
+  // Devolve o id da mensagem no WhatsApp (key.id da resposta da Evolution
+  // API) — usado por MessagesService.create pra guardar em
+  // Message.evolution_message_id e reconhecer o eco dessa mesma mensagem
+  // quando ela voltar pelo webhook do n8n como "fromMe" (dedup, ver
+  // "Grupos do WhatsApp"/mensagens externas no CLAUDE.md). null se a
+  // resposta não vier no formato esperado — dedup só deixa de funcionar
+  // pra essa mensagem específica, não é um erro fatal de envio.
   async enviarMensagem(
     instance: string,
     telefone: string,
     texto: string,
-  ): Promise<void> {
+  ): Promise<{ id: string | null }> {
     const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
     const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
 
@@ -34,19 +41,22 @@ export class EvolutionService {
         `Falha ao enviar mensagem via Evolution API (${response.status}): ${corpo}`,
       );
     }
+
+    const corpo = await response.json().catch(() => null);
+    return { id: corpo?.key?.id ?? null };
   }
 
   async enviarMidia(
     instance: string,
     telefone: string,
     opcoes: {
-      mediatype: 'image' | 'document' | 'video';
+      mediatype: 'image' | 'document' | 'video' | 'audio';
       mimetype: string;
       caption?: string;
       fileName?: string;
       mediaBase64: string;
     },
-  ): Promise<void> {
+  ): Promise<{ id: string | null }> {
     const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
     const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
 
@@ -72,6 +82,9 @@ export class EvolutionService {
         `Falha ao enviar mídia via Evolution API (${response.status}): ${corpo}`,
       );
     }
+
+    const corpo = await response.json().catch(() => null);
+    return { id: corpo?.key?.id ?? null };
   }
 
   async getConnectionState(instance: string): Promise<Record<string, unknown>> {

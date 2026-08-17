@@ -46,6 +46,11 @@ export interface Message {
   // retornado por GET /conversations/:id/messages.
   cliente_nome?: string | null;
   conversa_atendente_id?: string | null;
+  // Só preenchidos quando origem = cliente E a conversa é um grupo (várias
+  // pessoas escrevem na mesma conversa) — quem realmente mandou essa
+  // mensagem. Ver "Grupos do WhatsApp" no CLAUDE.md.
+  remetente_nome?: string | null;
+  remetente_telefone?: string | null;
 }
 
 export interface Conversation {
