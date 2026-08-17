@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Activity,
   BookUser,
   Building2,
+  ChevronDown,
   Clock,
   LayoutDashboard,
   ListChecks,
@@ -14,6 +15,7 @@ import {
   LogOut,
   Moon,
   QrCode,
+  ShieldCheck,
   Sun,
   Users,
   UserPlus,
@@ -31,6 +33,10 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 ];
 
+// Agrupados num dropdown único ("Administração") em vez de itens soltos na
+// nav principal — com os 4 itens de NAV mais esses 5, a barra ficava
+// apertada (e o item "Status" quase colado no botão de tema). Ver
+// AdminNavMenu abaixo.
 const NAV_ADMIN = [
   { href: "/usuarios", label: "Usuários", icon: UserPlus },
   { href: "/departamentos", label: "Setores", icon: Building2 },
@@ -38,6 +44,76 @@ const NAV_ADMIN = [
   { href: "/horario-funcionamento", label: "Horário", icon: Clock },
   { href: "/status/publicar", label: "Status", icon: Activity },
 ];
+
+function AdminNavMenu({ pathname }: { pathname: string | null }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const active = NAV_ADMIN.some((item) => pathname?.startsWith(item.href));
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handleClickOutside(event: MouseEvent) {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-[0.875rem] font-medium transition-colors ${
+          active || open
+            ? "bg-tide-500/12 text-tide-500"
+            : "text-secondary hover:bg-sunken hover:text-primary"
+        }`}
+      >
+        <ShieldCheck size={15} />
+        Administração
+        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 top-full z-20 mt-2 w-56 rounded-xl border border-app bg-raised p-1.5 shadow-panel"
+        >
+          {NAV_ADMIN.map(({ href, label, icon: Icon }) => {
+            const itemActive = pathname?.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[0.875rem] font-medium transition-colors ${
+                  itemActive
+                    ? "bg-tide-500/12 text-tide-500"
+                    : "text-secondary hover:bg-sunken hover:text-primary"
+                }`}
+              >
+                <Icon size={15} />
+                {label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function PainelLayout({
   children,
@@ -79,7 +155,7 @@ export default function PainelLayout({
                 </div>
 
                 <nav className="flex items-center gap-1">
-                  {[...NAV, ...(user?.role === "admin" ? NAV_ADMIN : [])].map(({ href, label, icon: Icon }) => {
+                  {NAV.map(({ href, label, icon: Icon }) => {
                     const active = pathname?.startsWith(href);
                     return (
                       <Link
@@ -96,10 +172,11 @@ export default function PainelLayout({
                       </Link>
                     );
                   })}
+                  {user?.role === "admin" && <AdminNavMenu pathname={pathname} />}
                 </nav>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4 border-l border-app pl-4">
                 <button
                   type="button"
                   onClick={toggle}

@@ -471,6 +471,16 @@ Terceiro papel de usuário além de `admin`/`atendente` (backend: `UserRole.SUPE
 
 `tsc --noEmit`/`npm run build` limpos nos dois lados. **Não testado nesta sessão** (Docker/Postgres de dev fora do ar, junto com as pendências de migration já registradas acima) — falta rodar `npm run migration:run` e validar visualmente: criar um usuário supervisor, conferir que sem o toggle ele só vê o próprio setor, e que ligar o toggle libera a visão completa igual a um admin.
 
+### Header do painel — menu "Administração" agrupando os itens admin (2026-08-17)
+
+Com `Fila`/`Grupos`/`Contatos`/`Dashboard` (nav principal) mais os 5 itens admin (`Usuários`/`Setores`/`WhatsApp`/`Horário`/`Status`) soltos lado a lado, a barra superior ficava apertada pra um admin — o item `Status` (último da lista) quase encostava no botão de alternar tema, do outro lado do header. Pedido do usuário pra ajustar.
+
+- **`AdminNavMenu`** (novo, local em `layout.tsx`, não virou componente de `ui/` por ser específico demais desse header): dropdown único "Administração" (ícone `ShieldCheck` + `ChevronDown`) que agrupa os 5 itens antes soltos — mesmo padrão de popover já usado em `QuickReplies.tsx` (`useState` + click-outside + Escape, sem lib de terceiros). Fica destacado (mesma cor `tide` dos itens ativos da nav) quando a rota atual é qualquer uma das 5 páginas admin, mesmo com o menu fechado.
+- Nav principal (`NAV`) e o dropdown (`NAV_ADMIN`) continuam duas constantes separadas — só mudou *como* `NAV_ADMIN` é renderizado (dropdown em vez de itens soltos), não a lista em si.
+- Grupo de controles à direita (tema/usuário/sair) ganhou `border-l border-app pl-4` — separador visual mais claro entre a nav e essa área, complementando a redução de itens (o problema original já melhora bastante só com o dropdown, mas o divisor deixa a fronteira inequívoca em qualquer largura de tela).
+
+Mudança inteiramente visual/estrutural, sem lógica de negócio — `tsc --noEmit`/`npm run build` limpos. **Não testado visualmente no navegador nesta sessão.**
+
 ### `ConfirmModal` — substituiu `window.confirm` (2026-07-27)
 
 `components/ui/ConfirmModal.tsx`: modal de confirmação renderizado via `createPortal` em `document.body`, com Escape/clique no backdrop pra cancelar, prop `loading` (spinner no botão de confirmar enquanto a ação assíncrona roda) e `variant="danger"` (vermelho, ícone de alerta) pra ações destrutivas. Motivo: `window.confirm` tem aparência de navegador, destoando da identidade visual do painel.
@@ -527,6 +537,7 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 - [x] Gravação de áudio pelo microfone do navegador no chat, reaproveitando o mecanismo de anexo já existente (2026-08-17). Ver "Gravação de áudio pelo microfone do navegador" acima. `tsc`/`build` limpos. **Não testado com microfone/WhatsApp real nesta sessão.**
 - [x] Aba `/contatos` (aberta a todos os atendentes, não admin-only): sincroniza ao vivo os contatos do WhatsApp conectado (`GET /contacts/whatsapp`, nunca persistido) + lista própria gerenciada pelo Maré (`Contact`, migration `AddContacts`, CRUD completo, hard delete) com importar/exportar CSV feito no frontend (2026-08-17). Decisão de sincronizar do WhatsApp (em vez de lista 100% local) confirmada com o usuário antes de implementar. Ver "Aba de Contatos" acima. `tsc`/`build` limpos nos dois lados. **Não testado nesta sessão** — migration `AddContacts` não rodada (Docker fora do ar) e `GET /contacts/whatsapp` não validado contra uma instância real (formato de `findContacts` da Evolution API incerto).
 - [x] Papel Supervisor (`UserRole.SUPERVISOR`, migration `AddSupervisorUserRole`) + toggle "Ver todos os setores" (`useVerTodosSetores`, 100% client-side/localStorage) em `fila`/`dashboard`, dando ao supervisor o mesmo alcance do admin quando ligado (2026-08-17). Ver "Papel Supervisor + toggle" acima. `tsc`/`build` limpos nos dois lados. **Não testado nesta sessão** — migration não rodada (Docker fora do ar), fluxo não validado visualmente.
+- [x] Header do painel: os 5 itens admin (Usuários/Setores/WhatsApp/Horário/Status) agrupados num dropdown único "Administração" (`AdminNavMenu`) em vez de soltos na nav, corrigindo a barra apertada (Status quase colado no botão de tema) (2026-08-17). Ver "Header do painel" acima. `tsc`/`build` limpos. **Não testado visualmente no navegador nesta sessão.**
 
 ## Ambiente de desenvolvimento
 
@@ -578,6 +589,8 @@ Item da mesma sessão de 2026-08-17, pedido em seguida (gravação de áudio por
 Item da mesma sessão de 2026-08-17, pedido logo depois (aba de Contatos) **código concluído, `tsc`/`build` limpos nos dois lados** — ver "Aba de Contatos" acima. **Ainda falta**: `npm run migration:run` (migration `AddContacts`, junto com a pendência de migration dos itens anteriores) e validar `GET /contacts/whatsapp` contra uma instância real — o formato de retorno de `findContacts` não foi confirmado nesta sessão, `normalizarContatoWhatsapp` em `contatos/page.tsx` é o primeiro lugar a ajustar se a lista vier vazia/errada.
 
 Item da mesma sessão de 2026-08-17, pedido em seguida (papel Supervisor + toggle "ver todos os setores") **código concluído, `tsc`/`build` limpos nos dois lados** — ver "Papel Supervisor + toggle" acima. **Ainda falta**: `npm run migration:run` (migration `AddSupervisorUserRole`, junto com as demais pendências de migration desta sessão) e validar visualmente no navegador — criar um usuário supervisor e conferir que sem o toggle ele só vê o próprio setor, e que ligado libera a visão completa.
+
+Item da mesma sessão de 2026-08-17, pedido junto com o anterior (ajuste do header agrupando os itens admin num dropdown "Administração") **código concluído, `tsc`/`build` limpos** — ver "Header do painel" acima. **Ainda falta**: validar visualmente no navegador, inclusive em telas estreitas.
 
 Sugestões levantadas pelo Claude (ainda **não** pedidas pelo usuário — avaliar antes de implementar):
 
