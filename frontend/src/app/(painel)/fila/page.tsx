@@ -14,11 +14,13 @@ import {
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { ClientTagsPicker } from "@/components/ui/ClientTagsPicker";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Switch } from "@/components/ui/Switch";
 import { useAuth } from "@/hooks/useAuth";
+import { useAutoMessages } from "@/hooks/useAutoMessages";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -27,13 +29,14 @@ import { useWhatsappAvatar } from "@/hooks/useWhatsappAvatar";
 import {
   assumeConversation,
   EVOLUTION_INSTANCE,
+  getClientTags,
   getConversationsPaginado,
   normalizeError,
   sendMessage,
 } from "@/lib/api";
-import { mensagemAutomaticaAssumir } from "@/lib/quickReplies";
+import { resolverTemplate } from "@/lib/quickReplies";
 import { formatRelativeTime } from "@/lib/time";
-import type { Conversation, ConversationStatus } from "@/types";
+import type { Conversation, ConversationStatus, Tag } from "@/types";
 
 const TABS: { status: ConversationStatus; label: string }[] = [
   { status: "aguardando", label: "Na fila" },
@@ -45,6 +48,8 @@ interface ConversaItemProps {
   conversa: Conversation;
   tab: ConversationStatus;
   naoLidas: number;
+  tags: Tag[];
+  onTagsChange: (tags: Tag[]) => void;
   onAssumir: () => void;
   onAbrir: () => void;
 }
@@ -56,16 +61,23 @@ function ConversaItem({
   conversa: c,
   tab,
   naoLidas,
+  tags,
+  onTagsChange,
   onAssumir,
   onAbrir,
 }: ConversaItemProps) {
-  const { fotoUrl } = useWhatsappAvatar(c.id);
+  const { fotoUrl, isLoading: carregandoAvatar } = useWhatsappAvatar(c.id);
 
   return (
     <li className="animate-queue-in rounded-xl border border-app bg-raised p-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
-          <Avatar src={fotoUrl} alt={c.cliente_nome ?? "Cliente"} tipo="cliente" />
+          <Avatar
+            src={fotoUrl}
+            alt={c.cliente_nome ?? "Cliente"}
+            tipo="cliente"
+            loading={carregandoAvatar}
+          />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-semibold text-primary">
@@ -98,6 +110,9 @@ function ConversaItem({
                 </span>
               )}
             </div>
+            <div className="mt-2">
+              <ClientTagsPicker telefone={c.telefone} tagsAtuais={tags} onChange={onTagsChange} />
+            </div>
           </div>
         </div>
 
@@ -127,6 +142,7 @@ const POR_PAGINA = 5;
 export default function FilaPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { autoMessages } = useAutoMessages();
   const { departments } = useDepartments();
   const { unreadByConversation } = useNotifications();
 
@@ -140,6 +156,7 @@ export default function FilaPage() {
   const [tab, setTab] = useState<ConversationStatus>("aguardando");
   const [departamentoId, setDepartamentoId] = useState("");
   const [conversas, setConversas] = useState<Conversation[]>([]);
+  const [tagsPorTelefone, setTagsPorTelefone] = useState<Record<string, Tag[]>>({});
   const [total, setTotal] = useState(0);
   const [pagina, setPagina] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
@@ -218,6 +235,18 @@ export default function FilaPage() {
     carregar();
   }, [carregar]);
 
+  // Busca em lote as etiquetas dos telefones visíveis na página atual —
+  // evita uma chamada por linha (ver "Etiquetas de clientes" no CLAUDE.md).
+  useEffect(() => {
+    const telefones = Array.from(new Set(conversas.map((c) => c.telefone)));
+    if (telefones.length === 0) return;
+    getClientTags(telefones)
+      .then(setTagsPorTelefone)
+      .catch(() => {
+        // silencioso — cards ficam sem pill de etiqueta, não bloqueia a fila
+      });
+  }, [conversas]);
+
   const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
 
   // Primeiro teste de ponta a ponta do WebSocket: qualquer mudança relevante
@@ -241,7 +270,7 @@ export default function FilaPage() {
         try {
           await sendMessage(id, {
             origem: "atendente",
-            mensagem: mensagemAutomaticaAssumir(user?.nome ?? ""),
+            mensagem: resolverTemplate(autoMessages.mensagem_iniciar, user?.nome ?? ""),
             instance: EVOLUTION_INSTANCE,
           });
         } catch {
@@ -391,6 +420,10 @@ export default function FilaPage() {
               conversa={c}
               tab={tab}
               naoLidas={unreadByConversation[c.id] ?? 0}
+              tags={tagsPorTelefone[c.telefone] ?? []}
+              onTagsChange={(tags) =>
+                setTagsPorTelefone((prev) => ({ ...prev, [c.telefone]: tags }))
+              }
               onAssumir={() => setIniciandoConversa(c)}
               onAbrir={() => router.push(`/conversas/${c.id}`)}
             />

@@ -10,6 +10,8 @@ interface AvatarProps {
   tipo: ConversationTipo;
   size?: number;
   className?: string;
+  /** Mostra um skeleton pulsante em vez do ícone genérico — enquanto a busca (ver useWhatsappAvatar) ainda não voltou. */
+  loading?: boolean;
 }
 
 // Foto de perfil (cliente) ou do grupo, vinda direto da URL da Evolution
@@ -17,10 +19,20 @@ interface AvatarProps {
 // é servida publicamente pela própria URL assinada que a Evolution API
 // devolve. Cai pro ícone genérico (mesmo padrão "sem nome" já usado em
 // cliente_nome/telefone) se não tiver foto ou a URL falhar ao carregar.
-export function Avatar({ src, alt, tipo, size = 40, className = "" }: AvatarProps) {
+export function Avatar({ src, alt, tipo, size = 40, className = "", loading = false }: AvatarProps) {
   const [erro, setErro] = useState(false);
 
   const estiloTamanho = { width: size, height: size };
+
+  if (loading && !src) {
+    return (
+      <div
+        style={estiloTamanho}
+        aria-hidden="true"
+        className={`shrink-0 animate-pulse rounded-full bg-sunken ${className}`}
+      />
+    );
+  }
 
   if (src && !erro) {
     // eslint-disable-next-line @next/next/no-img-element

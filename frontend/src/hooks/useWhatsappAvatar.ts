@@ -13,11 +13,16 @@ import { EVOLUTION_INSTANCE, getConversationWhatsappInfo } from "@/lib/api";
 export function useWhatsappAvatar(conversationId: string) {
   const [nome, setNome] = useState<string | null>(null);
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
+  // true enquanto a chamada à Evolution API não voltou — usado pra mostrar
+  // um skeleton em vez de piscar "Grupo sem nome"/ícone genérico por alguns
+  // segundos (a chamada real à Evolution API não é instantânea).
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelado = false;
     setNome(null);
     setFotoUrl(null);
+    setIsLoading(Boolean(EVOLUTION_INSTANCE));
 
     if (!EVOLUTION_INSTANCE) return;
 
@@ -29,6 +34,9 @@ export function useWhatsappAvatar(conversationId: string) {
       })
       .catch(() => {
         // silencioso — avatar/nome do WhatsApp é adorno, não bloqueia a tela
+      })
+      .finally(() => {
+        if (!cancelado) setIsLoading(false);
       });
 
     return () => {
@@ -36,5 +44,5 @@ export function useWhatsappAvatar(conversationId: string) {
     };
   }, [conversationId]);
 
-  return { nome, fotoUrl };
+  return { nome, fotoUrl, isLoading };
 }

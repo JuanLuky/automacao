@@ -20,6 +20,7 @@ import {
   MessagesSquare,
   Paperclip,
   Phone,
+  RotateCcw,
   Send,
   Square,
   User as UserIcon,
@@ -27,12 +28,14 @@ import {
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { ClientTagsPicker } from "@/components/ui/ClientTagsPicker";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { MediaMessage } from "@/components/ui/MediaMessage";
 import { QuickReplies } from "@/components/ui/QuickReplies";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAuth } from "@/hooks/useAuth";
+import { useAutoMessages } from "@/hooks/useAutoMessages";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -40,16 +43,18 @@ import { useWhatsappAvatar } from "@/hooks/useWhatsappAvatar";
 import {
   EVOLUTION_INSTANCE,
   finishConversation,
+  getClientTags,
   getConversation,
   getConversationParticipantAvatar,
   getMessages,
   normalizeError,
+  reopenConversation,
   sendMessage,
   transferConversation,
 } from "@/lib/api";
 import { formatTime } from "@/lib/time";
-import { MENSAGEM_AUTOMATICA_FINALIZAR, resolverTemplate } from "@/lib/quickReplies";
-import type { Conversation, Message, MessageTipo } from "@/types";
+import { resolverTemplate } from "@/lib/quickReplies";
+import type { Conversation, Message, MessageTipo, Tag } from "@/types";
 
 // Mesma allowlist do backend (ver MediaStorageService) — checar aqui só pra
 // dar feedback rápido antes de gastar uma requisição; quem garante de
@@ -114,13 +119,15 @@ export default function ConversaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { autoMessages } = useAutoMessages();
   const { departments } = useDepartments();
   const { clearUnread } = useNotifications();
-  const { nome: nomeWhatsapp, fotoUrl } = useWhatsappAvatar(id);
+  const { nome: nomeWhatsapp, fotoUrl, isLoading: carregandoAvatar } = useWhatsappAvatar(id);
 
   const [conversa, setConversa] = useState<Conversation | null | undefined>(
     undefined,
   );
+  const [tagsCliente, setTagsCliente] = useState<Tag[]>([]);
   const [mensagens, setMensagens] = useState<Message[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [texto, setTexto] = useState("");
@@ -140,6 +147,7 @@ export default function ConversaPage() {
   // do modal de "Iniciar atendimento" na fila.
   const [modoFinalizar, setModoFinalizar] = useState<"com_mensagem" | "sem_mensagem" | null>(null);
   const [confirmandoFinalizar, setConfirmandoFinalizar] = useState(false);
+  const [reabrindo, setReabrindo] = useState(false);
 
   const [transferindo, setTransferindo] = useState(false);
   const [transferDeptId, setTransferDeptId] = useState("");
@@ -178,6 +186,17 @@ export default function ConversaPage() {
   useEffect(() => {
     clearUnread(id);
   }, [id, clearUnread]);
+
+  // Etiquetas são por telefone (não por conversa) — só faz sentido pra
+  // cliente, não pra grupo (ver "Etiquetas de clientes" no CLAUDE.md).
+  useEffect(() => {
+    if (!conversa || conversa.tipo !== "cliente") return;
+    getClientTags([conversa.telefone])
+      .then((mapa) => setTagsCliente(mapa[conversa.telefone] ?? []))
+      .catch(() => {
+        // silencioso — cabeçalho fica sem pill de etiqueta
+      });
+  }, [conversa?.telefone, conversa?.tipo]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -380,7 +399,7 @@ export default function ConversaPage() {
         try {
           await sendMessage(id, {
             origem: "atendente",
-            mensagem: MENSAGEM_AUTOMATICA_FINALIZAR,
+            mensagem: autoMessages.mensagem_finalizar,
             instance: EVOLUTION_INSTANCE,
           });
         } catch {
@@ -393,6 +412,23 @@ export default function ConversaPage() {
       setErro(normalizeError(error).message);
       setModoFinalizar(null);
       setConfirmandoFinalizar(false);
+    }
+  }
+
+  async function handleReabrir() {
+    setReabrindo(true);
+    setErro(null);
+    try {
+      // Fica na própria tela (diferente de Finalizar/Transferir, que voltam
+      // pra fila) — o ponto de reabrir é continuar respondendo aqui mesmo.
+      // Recarrega conversa+mensagens pra pegar o novo status e a mensagem
+      // de sistema "Conversa reaberta." que o backend registrou.
+      await reopenConversation(id);
+      await carregar();
+    } catch (error) {
+      setErro(normalizeError(error).message);
+    } finally {
+      setReabrindo(false);
     }
   }
 
@@ -459,15 +495,24 @@ export default function ConversaPage() {
             tipo={conversa.tipo}
             size={44}
             className="mt-0.5"
+            loading={carregandoAvatar}
           />
 
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-display text-lg font-semibold text-primary">
-                {conversa.cliente_nome ||
-                  nomeWhatsapp ||
-                  (conversa.tipo === "grupo" ? "Grupo sem nome" : "Cliente sem nome")}
-              </h1>
+              {/* "cliente_nome" de grupo quase sempre vem vazio (ver
+                  "Grupos do WhatsApp" no CLAUDE.md) — enquanto a busca ao
+                  vivo do nome não volta, mostra um skeleton em vez de
+                  piscar "Grupo sem nome" e trocar pro nome certo depois. */}
+              {carregandoAvatar && conversa.tipo === "grupo" && !conversa.cliente_nome ? (
+                <span className="block h-6 w-48 animate-pulse rounded bg-sunken" />
+              ) : (
+                <h1 className="font-display text-lg font-semibold text-primary">
+                  {conversa.cliente_nome ||
+                    nomeWhatsapp ||
+                    (conversa.tipo === "grupo" ? "Grupo sem nome" : "Cliente sem nome")}
+                </h1>
+              )}
               {conversa.departamento && (
                 <span className="text-eyebrow font-semibold uppercase text-tide-400">
                   {conversa.departamento.nome}
@@ -495,6 +540,15 @@ export default function ConversaPage() {
                 <StatusBadge status={conversa.status} />
               )}
             </div>
+            {conversa.tipo === "cliente" && (
+              <div className="mt-2">
+                <ClientTagsPicker
+                  telefone={conversa.telefone}
+                  tagsAtuais={tagsCliente}
+                  onChange={setTagsCliente}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -516,6 +570,20 @@ export default function ConversaPage() {
             >
               <CheckCircle2 size={15} />
               Finalizar
+            </Button>
+          </div>
+        )}
+
+        {conversa.tipo === "cliente" && conversa.status === "finalizado" && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              className="!px-3.5 !py-2 text-[0.8125rem]"
+              loading={reabrindo}
+              onClick={handleReabrir}
+            >
+              <RotateCcw size={15} />
+              Reabrir conversa
             </Button>
           </div>
         )}

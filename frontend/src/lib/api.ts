@@ -1,7 +1,9 @@
 import axios, { AxiosError } from "axios";
 import type {
   ApiError,
+  AutoMessages,
   BusinessHours,
+  ClientTagsMap,
   Contact,
   ConversationsPaginado,
   Conversation,
@@ -9,22 +11,29 @@ import type {
   ConversationTipo,
   CreateContactPayload,
   CreateDepartmentPayload,
+  CreateQuickReplyPayload,
   CreateStatusUpdatePayload,
+  CreateTagPayload,
   CreateUserPayload,
   Department,
   ImportContactsResult,
   LoginPayload,
   LoginResponse,
   Message,
+  QuickReply,
   RoleLabels,
   SendMessagePayload,
   StatusAtual,
   StatusUpdate,
+  Tag,
   TransferPayload,
+  UpdateAutoMessagesPayload,
   UpdateBusinessHoursPayload,
   UpdateContactPayload,
   UpdateDepartmentPayload,
+  UpdateQuickReplyPayload,
   UpdateRoleLabelsPayload,
+  UpdateTagPayload,
   UpdateUserPayload,
   User,
   WhatsappContactRaw,
@@ -256,6 +265,11 @@ export async function finishConversation(id: string): Promise<Conversation> {
   return data;
 }
 
+export async function reopenConversation(id: string): Promise<Conversation> {
+  const { data } = await api.patch<Conversation>(`/conversations/${id}/reopen`);
+  return data;
+}
+
 export async function getMessages(conversationId: string): Promise<Message[]> {
   const { data } = await api.get<Message[]>(
     `/conversations/${conversationId}/messages`,
@@ -420,5 +434,96 @@ export async function updateRoleLabels(
   payload: UpdateRoleLabelsPayload,
 ): Promise<RoleLabels> {
   const { data } = await api.patch<RoleLabels>("/role-labels", payload);
+  return data;
+}
+
+/** Qualquer atendente autenticado pode ler — disparada ao Assumir/Finalizar por qualquer um. */
+export async function getAutoMessages(): Promise<AutoMessages> {
+  const { data } = await api.get<AutoMessages>("/auto-messages");
+  return data;
+}
+
+export async function updateAutoMessages(
+  payload: UpdateAutoMessagesPayload,
+): Promise<AutoMessages> {
+  const { data } = await api.patch<AutoMessages>("/auto-messages", payload);
+  return data;
+}
+
+/** Qualquer atendente autenticado pode ler — usado no popover de respostas rápidas do chat. */
+export async function getQuickReplies(): Promise<QuickReply[]> {
+  const { data } = await api.get<QuickReply[]>("/quick-replies");
+  return data;
+}
+
+export async function createQuickReply(
+  payload: CreateQuickReplyPayload,
+): Promise<QuickReply> {
+  const { data } = await api.post<QuickReply>("/quick-replies", payload);
+  return data;
+}
+
+export async function updateQuickReply(
+  id: string,
+  payload: UpdateQuickReplyPayload,
+): Promise<QuickReply> {
+  const { data } = await api.patch<QuickReply>(`/quick-replies/${id}`, payload);
+  return data;
+}
+
+export async function deleteQuickReply(id: string): Promise<void> {
+  await api.delete(`/quick-replies/${id}`);
+}
+
+/** Qualquer atendente autenticado pode ler — usado pro pill/picker de etiquetas na fila/chat. */
+export async function getTags(): Promise<Tag[]> {
+  const { data } = await api.get<Tag[]>("/tags");
+  return data;
+}
+
+export async function createTag(payload: CreateTagPayload): Promise<Tag> {
+  const { data } = await api.post<Tag>("/tags", payload);
+  return data;
+}
+
+export async function updateTag(
+  id: string,
+  payload: UpdateTagPayload,
+): Promise<Tag> {
+  const { data } = await api.patch<Tag>(`/tags/${id}`, payload);
+  return data;
+}
+
+export async function deleteTag(id: string): Promise<void> {
+  await api.delete(`/tags/${id}`);
+}
+
+/** Busca em lote (evita N chamadas por linha visível na fila). */
+export async function getClientTags(telefones: string[]): Promise<ClientTagsMap> {
+  if (telefones.length === 0) return {};
+  const { data } = await api.get<ClientTagsMap>("/client-tags", {
+    params: { telefones: telefones.join(",") },
+  });
+  return data;
+}
+
+export async function attachClientTag(
+  telefone: string,
+  tagId: string,
+): Promise<Tag[]> {
+  const { data } = await api.post<Tag[]>("/client-tags", {
+    telefone,
+    tag_id: tagId,
+  });
+  return data;
+}
+
+export async function detachClientTag(
+  telefone: string,
+  tagId: string,
+): Promise<Tag[]> {
+  const { data } = await api.delete<Tag[]>(
+    `/client-tags/${encodeURIComponent(telefone)}/${tagId}`,
+  );
   return data;
 }

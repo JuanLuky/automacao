@@ -13,20 +13,25 @@ import {
   ListChecks,
   Loader2,
   LogOut,
+  MessageSquareText,
   Moon,
   QrCode,
   ShieldCheck,
   Sun,
   Tag,
+  Tags,
   Users,
   UserPlus,
   Waves,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
+import { AutoMessagesProvider } from "@/hooks/useAutoMessages";
 import { DepartmentsProvider } from "@/hooks/useDepartments";
 import { NotificationsProvider } from "@/hooks/useNotifications";
+import { QuickRepliesProvider } from "@/hooks/useQuickReplies";
 import { RoleLabelsProvider, useRoleLabels } from "@/hooks/useRoleLabels";
+import { TagsProvider } from "@/hooks/useTags";
 
 const NAV = [
   { href: "/fila", label: "Fila", icon: ListChecks },
@@ -46,6 +51,8 @@ const NAV_ADMIN = [
   { href: "/horario-funcionamento", label: "Horário", icon: Clock },
   { href: "/status/publicar", label: "Status", icon: Activity },
   { href: "/perfis", label: "Perfis", icon: Tag },
+  { href: "/mensagens", label: "Mensagens", icon: MessageSquareText },
+  { href: "/etiquetas", label: "Etiquetas", icon: Tags },
 ];
 
 function AdminNavMenu({ pathname }: { pathname: string | null }) {
@@ -161,6 +168,9 @@ export default function PainelLayout({
   return (
     <DepartmentsProvider>
       <RoleLabelsProvider>
+      <AutoMessagesProvider>
+      <QuickRepliesProvider>
+      <TagsProvider>
       <NotificationsProvider>
         <div className="min-h-screen bg-surface">
           <header className="sticky top-0 z-10 border-b border-app bg-raised/80 backdrop-blur">
@@ -229,6 +239,9 @@ export default function PainelLayout({
           <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
         </div>
       </NotificationsProvider>
+      </TagsProvider>
+      </QuickRepliesProvider>
+      </AutoMessagesProvider>
       </RoleLabelsProvider>
     </DepartmentsProvider>
   );

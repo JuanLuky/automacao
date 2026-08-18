@@ -237,6 +237,66 @@ export interface ImportContactsResult {
 }
 
 /**
+ * Mensagens automáticas disparadas ao Assumir/Finalizar uma conversa —
+ * editáveis em /mensagens (só admin). "[nome do atendente]" em
+ * mensagem_iniciar é resolvido no frontend (ver resolverTemplate).
+ */
+export interface AutoMessages {
+  mensagem_iniciar: string;
+  mensagem_finalizar: string;
+}
+
+export interface UpdateAutoMessagesPayload {
+  mensagem_iniciar?: string;
+  mensagem_finalizar?: string;
+}
+
+/** Template de resposta rápida do chat — editável em /mensagens (só admin). */
+export interface QuickReply {
+  id: string;
+  categoria: string;
+  texto: string;
+  ordem: number;
+  criado_em: string;
+}
+
+export interface CreateQuickReplyPayload {
+  categoria: string;
+  texto: string;
+  ordem?: number;
+}
+
+export interface UpdateQuickReplyPayload {
+  categoria?: string;
+  texto?: string;
+  ordem?: number;
+}
+
+/**
+ * Etiqueta do catálogo (ex: "Devedor", "Cliente Premium") — editável em
+ * /etiquetas (só admin). "cor" é um hex (#rrggbb).
+ */
+export interface Tag {
+  id: string;
+  nome: string;
+  cor: string;
+  criado_em: string;
+}
+
+export interface CreateTagPayload {
+  nome: string;
+  cor: string;
+}
+
+export interface UpdateTagPayload {
+  nome?: string;
+  cor?: string;
+}
+
+/** Mapa telefone -> etiquetas atribuídas a esse cliente (ver GET /client-tags). */
+export type ClientTagsMap = Record<string, Tag[]>;
+
+/**
  * Passthrough do payload cru da Evolution API (POST /chat/findContacts) —
  * formato varia entre versões, normalizado em contatos/page.tsx.
  */

@@ -36,16 +36,26 @@ interface GrupoItemProps {
 // ver "Avatares" no CLAUDE.md), então o nome vindo da API é o fallback
 // principal aqui, não só um adorno.
 function GrupoItem({ conversa: c, onAbrir }: GrupoItemProps) {
-  const { nome, fotoUrl } = useWhatsappAvatar(c.id);
+  const { nome, fotoUrl, isLoading } = useWhatsappAvatar(c.id);
+  // "cliente_nome" quase sempre vem vazio pra grupo (não é buscado na
+  // criação, ver "Grupos do WhatsApp" no CLAUDE.md) — então enquanto a
+  // busca ao vivo não volta, não dá pra saber ainda se vai sobrar "Grupo
+  // sem nome" ou um nome de verdade. Mostrar um skeleton em vez de piscar
+  // "Grupo sem nome" por 1-2s e depois trocar pro nome certo.
+  const aindaCarregandoNome = isLoading && !c.cliente_nome;
   const nomeExibido = c.cliente_nome || nome || "Grupo sem nome";
 
   return (
     <li className="animate-queue-in rounded-xl border border-app bg-raised p-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
-          <Avatar src={fotoUrl} alt={nomeExibido} tipo="grupo" />
+          <Avatar src={fotoUrl} alt={nomeExibido} tipo="grupo" loading={isLoading} />
           <div className="min-w-0">
-            <span className="font-semibold text-primary">{nomeExibido}</span>
+            {aindaCarregandoNome ? (
+              <span className="block h-[1.125rem] w-40 animate-pulse rounded bg-sunken" />
+            ) : (
+              <span className="font-semibold text-primary">{nomeExibido}</span>
+            )}
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem] text-secondary">
               <span className="flex items-center gap-1">
                 <MessagesSquare size={13} />
