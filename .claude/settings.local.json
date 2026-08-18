@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(docker version *)",
+      "Bash(docker compose *)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /dev/null -w \"login:%{http_code}\\\\n\" http://localhost:3001/login)",
+      "PowerShell(cd \"C:\\\\Users\\\\juan.santos\\\\Documents\\\\GitHub\\\\automacao\\\\frontend\"; Start-Process -FilePath \"npm\" -ArgumentList \"run\",\"start\" -RedirectStandardOutput \"$env:TEMP\\\\nextstart.log\" -RedirectStandardError \"$env:TEMP\\\\nextstart-err.log\" -WindowStyle Hidden; Start-Sleep -Seconds 5; try { $r1 = Invoke-WebRequest -Uri \"http://localhost:3001/login\" -UseBasicParsing; \"login: $\\($r1.StatusCode\\)\" } catch { \"login error: $_\" })",
+      "PowerShell(try { $r1 = Invoke-WebRequest -Uri \"http://localhost:3001/login\" -UseBasicParsing -TimeoutSec 5; \"login: $\\($r1.StatusCode\\)\" } catch { \"login error: $_\" })",
+      "Bash(docker --version)",
+      "Bash(openssl rand *)",
+      "Bash(where docker-credential-desktop *)",
+      "Bash(where docker-credential-wincred *)",
+      "Bash(where docker *)",
+      "Bash(docker exec *)",
+      "Bash(docker volume *)",
+      "Bash(docker restart n8n *)",
+      "Bash(npm run *)",
+      "Bash(disown)",
+      "Read(//c/Users/JUAN~1.SAN/AppData/Local/Temp/claude/C--Users-juan-santos-Documents-GitHub-automacao/7641b2cf-626d-48d1-8aad-cc67763d9472/scratchpad/**)",
+      "Read(//c/Users/JUAN~1.SAN/AppData/Local/Temp/**)",
+      "PowerShell(Get-Process *)",
+      "Bash(curl *)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "mcp__ide__getDiagnostics",
+      "Bash(node -e \"console.log\\(require\\('typescript/package.json'\\).version\\)\")",
+      "PowerShell(node -e \"console.log\\(require\\('typescript/package.json'\\).version\\)\")",
+      "Bash(npm ls *)",
+      "Read(//c/Users/juan.santos/.vscode/**)",
+      "Read(//c/Users/juan.santos/AppData/Roaming/Code/User/**)",
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(npm run *)"
+    ]
+  }
+}
