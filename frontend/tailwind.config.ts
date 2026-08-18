@@ -65,7 +65,21 @@ const config: Config = {
       },
       animation: {
         "tide-sweep": "tide-sweep 3.5s ease-in-out infinite",
-        "queue-in": "queue-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both",
+        // Sem "forwards" (removido do "both" original) de propósito: com
+        // fill-mode "forwards", o elemento mantém "transform: translateY(0)"
+        // pra sempre após a animação terminar — e mesmo sendo um deslocamento
+        // nulo, qualquer valor de transform diferente de "none" cria um novo
+        // stacking context. Isso prendia popovers com z-index alto (ex:
+        // ClientTagsPicker) dentro do stacking context do próprio <li>,
+        // fazendo o <li> seguinte da lista (fila/grupos) pintar por cima do
+        // popover mesmo com z-index maior — bug encontrado em 2026-08-18 com
+        // vários clientes na fila. Sem "forwards", ao fim da animação o
+        // elemento volta pro valor padrão da cascata (transform: none), que
+        // já é visualmente idêntico ao estado final da keyframe, mas sem
+        // deixar stacking context nenhum pra trás. "backwards" (a outra
+        // metade de "both") já não tinha efeito nenhum aqui, já que nenhum
+        // uso desta animação define animation-delay.
+        "queue-in": "queue-in 0.45s cubic-bezier(0.22, 1, 0.36, 1)",
         "pulse-dot": "pulse-dot 2s ease-in-out infinite",
       },
     },
