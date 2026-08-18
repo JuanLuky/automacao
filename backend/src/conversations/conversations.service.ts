@@ -299,6 +299,57 @@ export class ConversationsService {
     return atualizada;
   }
 
+  async reabrir(id: string): Promise<Conversation> {
+    const conversa = await this.buscarOuFalhar(id);
+    this.recusarSeGrupo(conversa, 'reabrir');
+
+    if (conversa.status !== ConversationStatus.FINALIZADO) {
+      throw new BadRequestException(
+        'Só é possível reabrir conversas finalizadas.',
+      );
+    }
+
+    // Evita duas conversas "ativas" (não-finalizado) pro mesmo telefone ao
+    // mesmo tempo — poderia acontecer se o cliente já mandou mensagem depois
+    // da finalização (o n8n cria uma conversa nova nesse caso, ver
+    // findConversaAtivaPorTelefone) e alguém tenta reabrir a antiga também.
+    const jaTemAtiva = await this.conversationsRepository
+      .createQueryBuilder('conversation')
+      .where('conversation.telefone = :telefone', { telefone: conversa.telefone })
+      .andWhere('conversation.id != :id', { id })
+      .andWhere('conversation.status != :status', {
+        status: ConversationStatus.FINALIZADO,
+      })
+      .getCount();
+    if (jaTemAtiva > 0) {
+      throw new BadRequestException(
+        'Já existe uma conversa em aberto para esse telefone — não é possível reabrir esta.',
+      );
+    }
+
+    // Volta pro mesmo atendente que já estava com a conversa (finalizar não
+    // limpa atendente_id) — reabrir continua de onde parou, sem precisar
+    // "assumir" de novo. Só cai em "aguardando" no caso raro de nunca ter
+    // tido atendente (ex: registro antigo/manual sem esse campo setado).
+    conversa.status = conversa.atendente_id
+      ? ConversationStatus.EM_ATENDIMENTO
+      : ConversationStatus.AGUARDANDO;
+    conversa.finalizado_em = null;
+
+    const atualizada = await this.conversationsRepository.save(conversa);
+
+    await this.messagesRepository.save(
+      this.messagesRepository.create({
+        conversation_id: conversa.id,
+        origem: MessageOrigin.SISTEMA,
+        mensagem: 'Conversa reaberta.',
+      }),
+    );
+
+    this.eventsGateway.emitConversaAtualizada(atualizada);
+    return atualizada;
+  }
+
   // Grupo não tem fila/status (ver "Grupos" no frontend) — assumir,
   // transferir e finalizar são conceitos só de conversa com cliente.
   private recusarSeGrupo(conversa: Conversation, acao: string): void {

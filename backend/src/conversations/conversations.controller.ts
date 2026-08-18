@@ -113,4 +113,10 @@ export class ConversationsController {
   finalizar(@Param('id') id: string) {
     return this.conversationsService.finalizar(id);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/reopen')
+  reabrir(@Param('id') id: string) {
+    return this.conversationsService.reabrir(id);
+  }
 }
