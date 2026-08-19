@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertCircle, FileText, Loader2 } from "lucide-react";
 import { getMediaObjectUrl } from "@/lib/api";
 import type { Message } from "@/types";
+import { ImageLightbox } from "./ImageLightbox";
 
 interface MediaMessageProps {
   message: Message;
@@ -15,6 +16,7 @@ interface MediaMessageProps {
 export function MediaMessage({ message }: MediaMessageProps) {
   const [url, setUrl] = useState<string | null>(null);
   const [erro, setErro] = useState(false);
+  const [lightboxAberto, setLightboxAberto] = useState(false);
 
   useEffect(() => {
     let objectUrl: string | null = null;
@@ -59,14 +61,28 @@ export function MediaMessage({ message }: MediaMessageProps) {
 
   if (message.tipo === "imagem") {
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={url}
-          alt={message.midia_nome_arquivo ?? "Imagem"}
-          className="max-h-64 max-w-[240px] rounded-lg object-cover"
-        />
-      </a>
+      <>
+        <button
+          type="button"
+          onClick={() => setLightboxAberto(true)}
+          className="block cursor-zoom-in"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={url}
+            alt={message.midia_nome_arquivo ?? "Imagem"}
+            className="max-h-64 max-w-[240px] rounded-lg object-cover"
+          />
+        </button>
+        {lightboxAberto && (
+          <ImageLightbox
+            src={url}
+            alt={message.midia_nome_arquivo ?? "Imagem"}
+            downloadName={message.midia_nome_arquivo ?? undefined}
+            onClose={() => setLightboxAberto(false)}
+          />
+        )}
+      </>
     );
   }
 

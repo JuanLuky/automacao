@@ -55,7 +55,7 @@ type Aba = ConversationStatus | "grupos" | "bot";
 
 const TABS: { aba: Aba; label: string }[] = [
   { aba: "bot", label: "Bot" },
-  { aba: "aguardando", label: "Na fila" },
+  { aba: "aguardando", label: "Fila" },
   { aba: "em_atendimento", label: "Atendendo" },
   { aba: "finalizado", label: "Finalizadas" },
   { aba: "grupos", label: "Grupos" },
@@ -537,13 +537,13 @@ export default function AtendimentosPage() {
           )}
         </div>
 
-        <div className="flex shrink-0 border-b border-app">
+        <div className="flex shrink-0 gap-1 border-b border-app px-1">
           {TABS.map(({ aba, label }) => (
             <button
               key={aba}
               type="button"
               onClick={() => setTab(aba)}
-              className={`relative flex-1 px-1 py-2.5 text-[0.6875rem] font-medium transition-colors ${
+              className={`relative flex-1 px-2 py-2.5 text-[0.6875rem] font-medium transition-colors ${
                 tab === aba ? "text-primary" : "text-muted hover:text-secondary"
               }`}
             >
