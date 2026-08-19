@@ -9,10 +9,10 @@ import {
   type ReactNode,
 } from "react";
 import { getTags } from "@/lib/api";
-import type { Tag } from "@/types";
+import type { TagComUso } from "@/types";
 
 interface TagsContextValue {
-  tags: Tag[];
+  tags: TagComUso[];
   isLoading: boolean;
   /** Chamado pela tela /etiquetas depois de criar/editar/excluir, pro picker do chat/fila atualizar sem F5. */
   refresh: () => Promise<void>;
@@ -21,7 +21,7 @@ interface TagsContextValue {
 const TagsContext = createContext<TagsContextValue | undefined>(undefined);
 
 export function TagsProvider({ children }: { children: ReactNode }) {
-  const [tags, setTags] = useState<Tag[]>([]);
+  const [tags, setTags] = useState<TagComUso[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {

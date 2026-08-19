@@ -7,6 +7,7 @@ import {
   Download,
   Loader2,
   MessageCircle,
+  MessageCirclePlus,
   Pencil,
   Phone,
   Plus,
@@ -19,6 +20,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Field } from "@/components/ui/Field";
+import { NovaConversaModal } from "@/components/ui/NovaConversaModal";
 import {
   EVOLUTION_INSTANCE,
   createContact,
@@ -35,6 +37,12 @@ interface ContatoNormalizado {
   nome: string;
   telefone: string;
 }
+
+// Contato escolhido pra "chamar sem ele chamar" — alimenta o
+// NovaConversaModal já preenchido. Serve pras duas listas (sincronizados do
+// WhatsApp e adicionados à mão), que têm formatos diferentes mas só
+// precisam de nome + telefone aqui.
+type AlvoNovaConversa = { nome: string; telefone: string };
 
 // Confirmado contra a instância real desta sessão (POST
 // /chat/findContacts): o JID vem em "remoteJid" — "id" é a chave interna
@@ -116,6 +124,7 @@ export default function ContatosPage() {
   const [erroForm, setErroForm] = useState<string | null>(null);
 
   const [excluindoAlvo, setExcluindoAlvo] = useState<Contact | null>(null);
+  const [iniciandoConversa, setIniciandoConversa] = useState<AlvoNovaConversa | null>(null);
   const [executandoAcao, setExecutandoAcao] = useState(false);
 
   const [importando, setImportando] = useState(false);
@@ -435,6 +444,16 @@ export default function ContatosPage() {
                       {c.telefone}
                     </p>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIniciandoConversa(c)}
+                    aria-label={`Iniciar conversa com ${c.nome}`}
+                    className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.8125rem] font-medium text-muted transition-colors hover:bg-tide-500/10 hover:text-tide-500"
+                  >
+                    <MessageCirclePlus size={15} />
+                    Conversar
+                  </button>
                 </li>
               ))}
             </ul>
@@ -474,6 +493,15 @@ export default function ContatosPage() {
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
+                      onClick={() => setIniciandoConversa(c)}
+                      aria-label={`Iniciar conversa com ${c.nome}`}
+                      className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.8125rem] font-medium text-muted transition-colors hover:bg-tide-500/10 hover:text-tide-500"
+                    >
+                      <MessageCirclePlus size={15} />
+                      Conversar
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => abrirEditar(c)}
                       aria-label={`Editar ${c.nome}`}
                       className="rounded-md p-1.5 text-muted transition-colors hover:text-primary"
@@ -495,6 +523,13 @@ export default function ContatosPage() {
           </div>
         )}
       </section>
+
+      <NovaConversaModal
+        open={iniciandoConversa !== null}
+        telefoneInicial={iniciandoConversa?.telefone}
+        nomeInicial={iniciandoConversa?.nome}
+        onClose={() => setIniciandoConversa(null)}
+      />
 
       <ConfirmModal
         open={excluindoAlvo !== null}

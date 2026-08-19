@@ -5,6 +5,8 @@ import { Tag } from './entities/tag.entity';
 import { CreateTagDto } from './dto/create-tag.dto';
 import { UpdateTagDto } from './dto/update-tag.dto';
 
+export type TagComUso = Tag & { total_clientes: number };
+
 @Injectable()
 export class TagsService {
   constructor(
@@ -12,8 +14,26 @@ export class TagsService {
     private readonly tagsRepository: Repository<Tag>,
   ) {}
 
-  findAll(): Promise<Tag[]> {
-    return this.tagsRepository.find({ order: { nome: 'ASC' } });
+  // Cada etiqueta vem com quantos clientes a têm hoje. O catálogo é
+  // pequeno (dezenas), então uma agregação só resolve — evita o painel
+  // fazer N chamadas ou carregar client_tags inteira só pra contar. É
+  // LEFT JOIN de propósito: etiqueta sem nenhum cliente precisa aparecer
+  // na lista com 0, não sumir.
+  async findAll(): Promise<TagComUso[]> {
+    const { entities, raw } = await this.tagsRepository
+      .createQueryBuilder('tag')
+      .leftJoin('client_tags', 'ct', 'ct.tag_id = tag.id')
+      .addSelect('COUNT(ct.id)', 'total_clientes')
+      .groupBy('tag.id')
+      .orderBy('tag.nome', 'ASC')
+      .getRawAndEntities();
+
+    // COUNT no Postgres volta como bigint, que o driver entrega em string —
+    // sem o Number() o frontend receberia "3" e quebraria comparação numérica.
+    return entities.map((tag, i) => ({
+      ...tag,
+      total_clientes: Number(raw[i]?.total_clientes ?? 0),
+    }));
   }
 
   private async garantirNomeDisponivel(nome: string, idAtual?: string): Promise<void> {

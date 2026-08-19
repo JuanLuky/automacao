@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Inbox,
   Loader2,
+  MessageCirclePlus,
   Phone,
   Search,
   User as UserIcon,
@@ -16,6 +17,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ClientTagsPicker } from "@/components/ui/ClientTagsPicker";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { NovaConversaModal } from "@/components/ui/NovaConversaModal";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Switch } from "@/components/ui/Switch";
@@ -24,6 +26,7 @@ import { useAutoMessages } from "@/hooks/useAutoMessages";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { useTags } from "@/hooks/useTags";
 import { useVerTodosSetores } from "@/hooks/useVerTodosSetores";
 import { useWhatsappAvatar } from "@/hooks/useWhatsappAvatar";
 import {
@@ -155,6 +158,14 @@ export default function FilaPage() {
   const podeVerTodos = isAdmin || (isSupervisor && verTodos);
   const [tab, setTab] = useState<ConversationStatus>("aguardando");
   const [departamentoId, setDepartamentoId] = useState("");
+  // Filtro por etiqueta do cliente ("" = todas). Vale em qualquer aba: dá
+  // pra varrer a fila só dos "Devedor" tanto no aguardando quanto no
+  // histórico de finalizadas.
+  const { tags: catalogoTags } = useTags();
+  const [tagId, setTagId] = useState("");
+  // "Chamar o cliente sem ele chamar" — número digitado na hora. Partindo
+  // de um contato salvo, o mesmo modal é aberto já preenchido em /contatos.
+  const [novaConversaAberta, setNovaConversaAberta] = useState(false);
   const [conversas, setConversas] = useState<Conversation[]>([]);
   const [tagsPorTelefone, setTagsPorTelefone] = useState<Record<string, Tag[]>>({});
   const [total, setTotal] = useState(0);
@@ -188,7 +199,7 @@ export default function FilaPage() {
   // Trocar de aba ou de filtro invalida a página atual — sempre volta pra 1.
   useEffect(() => {
     setPagina(1);
-  }, [tab, filtroDepartamento, buscaDebounced, dataInicio, dataFim]);
+  }, [tab, filtroDepartamento, buscaDebounced, dataInicio, dataFim, tagId]);
 
   const carregar = useCallback(async () => {
     if (semSetor) {
@@ -205,6 +216,7 @@ export default function FilaPage() {
         departamento_id: filtroDepartamento,
         pagina,
         por_pagina: POR_PAGINA,
+        tag_id: tagId || undefined,
         ...(isFinalizadas
           ? {
               busca: buscaDebounced || undefined,
@@ -229,7 +241,7 @@ export default function FilaPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [tab, filtroDepartamento, semSetor, isFinalizadas, buscaDebounced, dataInicio, dataFim, pagina]);
+  }, [tab, filtroDepartamento, semSetor, isFinalizadas, buscaDebounced, dataInicio, dataFim, pagina, tagId]);
 
   useEffect(() => {
     carregar();
@@ -313,6 +325,30 @@ export default function FilaPage() {
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.nome}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          <Button
+            type="button"
+            className="!px-4 !py-2.5 text-[0.8125rem]"
+            onClick={() => setNovaConversaAberta(true)}
+          >
+            <MessageCirclePlus size={16} />
+            Iniciar conversa
+          </Button>
+          {catalogoTags.length > 0 && (
+            <div className="w-full max-w-[240px] sm:w-auto">
+              <Select
+                aria-label="Filtrar por etiqueta"
+                value={tagId}
+                onChange={(e) => setTagId(e.target.value)}
+              >
+                <option value="">Todas as etiquetas</option>
+                {catalogoTags.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nome}
                   </option>
                 ))}
               </Select>
@@ -458,6 +494,11 @@ export default function FilaPage() {
           </div>
         </div>
       )}
+
+      <NovaConversaModal
+        open={novaConversaAberta}
+        onClose={() => setNovaConversaAberta(false)}
+      />
 
       <ConfirmModal
         open={iniciandoConversa !== null}

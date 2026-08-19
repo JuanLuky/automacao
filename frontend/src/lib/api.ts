@@ -23,9 +23,12 @@ import type {
   QuickReply,
   RoleLabels,
   SendMessagePayload,
+  StartConversationPayload,
+  StartConversationResult,
   StatusAtual,
   StatusUpdate,
   Tag,
+  TagComUso,
   TransferPayload,
   UpdateAutoMessagesPayload,
   UpdateBusinessHoursPayload,
@@ -180,6 +183,7 @@ export async function getConversations(filtros: {
   data_inicio?: string;
   data_fim?: string;
   tipo?: ConversationTipo;
+  tag_id?: string;
 }): Promise<Conversation[]> {
   const { data } = await api.get<Conversation[]>("/conversations", {
     params: filtros,
@@ -197,6 +201,7 @@ export async function getConversationsPaginado(filtros: {
   pagina: number;
   por_pagina: number;
   tipo?: ConversationTipo;
+  tag_id?: string;
 }): Promise<ConversationsPaginado> {
   const { data } = await api.get<ConversationsPaginado>("/conversations", {
     params: filtros,
@@ -242,6 +247,22 @@ export async function getConversation(id: string): Promise<Conversation | null> 
     if ((error as AxiosError).response?.status === 404) return null;
     throw error;
   }
+}
+
+/**
+ * Abre um atendimento a partir do painel, sem o cliente ter escrito antes.
+ * O backend valida o número no WhatsApp e devolve ja_existia = true se já
+ * houver conversa em aberto (nesse caso não cria nada). Não manda mensagem
+ * nenhuma — quem envia a primeira é sendMessage, no fluxo normal.
+ */
+export async function startConversation(
+  payload: StartConversationPayload,
+): Promise<StartConversationResult> {
+  const { data } = await api.post<StartConversationResult>(
+    "/conversations/outbound",
+    payload,
+  );
+  return data;
 }
 
 export async function assumeConversation(id: string): Promise<Conversation> {
@@ -476,8 +497,8 @@ export async function deleteQuickReply(id: string): Promise<void> {
 }
 
 /** Qualquer atendente autenticado pode ler — usado pro pill/picker de etiquetas na fila/chat. */
-export async function getTags(): Promise<Tag[]> {
-  const { data } = await api.get<Tag[]>("/tags");
+export async function getTags(): Promise<TagComUso[]> {
+  const { data } = await api.get<TagComUso[]>("/tags");
   return data;
 }
 

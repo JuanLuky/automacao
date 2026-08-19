@@ -10,10 +10,18 @@ import { TagBadge } from "@/components/ui/TagBadge";
 import { useAuth } from "@/hooks/useAuth";
 import { useTags } from "@/hooks/useTags";
 import { createTag, deleteTag, normalizeError, updateTag } from "@/lib/api";
-import type { Tag } from "@/types";
+import type { Tag, TagComUso } from "@/types";
 
 const COR_PADRAO = "#14B8A6";
 const HEX_REGEX = /^#[0-9A-Fa-f]{6}$/;
+
+// Contagem vem do backend junto do catálogo (GET /tags) — serve tanto pra
+// linha da lista quanto pro aviso de exclusão, que antes falava em "todos
+// os clientes" sem dizer quantos eram.
+function rotuloUso(total: number): string {
+  if (total === 0) return "nenhum cliente";
+  return total === 1 ? "1 cliente" : `${total} clientes`;
+}
 
 export default function EtiquetasPage() {
   const router = useRouter();
@@ -30,7 +38,7 @@ export default function EtiquetasPage() {
   const [enviando, setEnviando] = useState(false);
   const [erroForm, setErroForm] = useState<string | null>(null);
 
-  const [excluindoAlvo, setExcluindoAlvo] = useState<Tag | null>(null);
+  const [excluindoAlvo, setExcluindoAlvo] = useState<TagComUso | null>(null);
   const [excluindo, setExcluindo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -242,7 +250,10 @@ export default function EtiquetasPage() {
           <ul className="divide-y divide-app">
             {tagsFiltradas.map((t) => (
               <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
-                <TagBadge tag={t} />
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <TagBadge tag={t} />
+                  <span className="text-[0.8125rem] text-muted">{rotuloUso(t.total_clientes)}</span>
+                </div>
 
                 <div className="flex items-center gap-1">
                   <button
@@ -271,7 +282,13 @@ export default function EtiquetasPage() {
       <ConfirmModal
         open={excluindoAlvo !== null}
         title={`Excluir ${excluindoAlvo?.nome}?`}
-        description="A etiqueta some de todos os clientes que a tinham atribuída. Não tem como desfazer."
+        description={
+          excluindoAlvo && excluindoAlvo.total_clientes > 0
+            ? `A etiqueta sai de ${rotuloUso(excluindoAlvo.total_clientes)} que a ${
+                excluindoAlvo.total_clientes === 1 ? "tinha" : "tinham"
+              } atribuída. Não tem como desfazer.`
+            : "Nenhum cliente usa essa etiqueta hoje. Não tem como desfazer."
+        }
         confirmLabel="Excluir"
         variant="danger"
         loading={excluindo}

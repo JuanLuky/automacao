@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ConversationsService } from './conversations.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
+import { StartConversationDto } from './dto/start-conversation.dto';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { ConversationStatus } from './enums/conversation-status.enum';
 import { ConversationTipo } from './enums/conversation-tipo.enum';
@@ -33,6 +34,7 @@ export class ConversationsController {
     @Query('pagina') pagina?: string,
     @Query('por_pagina') por_pagina?: string,
     @Query('tipo') tipo?: ConversationTipo,
+    @Query('tag_id') tag_id?: string,
   ) {
     return this.conversationsService.findAll({
       status,
@@ -43,6 +45,7 @@ export class ConversationsController {
       pagina: pagina ? parseInt(pagina, 10) : undefined,
       por_pagina: por_pagina ? parseInt(por_pagina, 10) : undefined,
       tipo,
+      tag_id,
     });
   }
 
@@ -94,6 +97,15 @@ export class ConversationsController {
   @Post()
   create(@Body() dto: CreateConversationDto) {
     return this.conversationsService.create(dto);
+  }
+
+  // "Chamar o cliente sem ele chamar" — inicia atendimento pelo painel.
+  // Autenticada (diferente do POST / acima, que o n8n usa sem token): o
+  // atendimento nasce no nome de quem chamou, então precisa saber quem é.
+  @UseGuards(JwtAuthGuard)
+  @Post('outbound')
+  iniciar(@Body() dto: StartConversationDto, @Req() req: any) {
+    return this.conversationsService.iniciar(dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)

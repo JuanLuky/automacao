@@ -9,6 +9,7 @@ import { Conversation } from './entities/conversation.entity';
 import { ConversationStatus } from './enums/conversation-status.enum';
 import { ConversationTipo } from './enums/conversation-tipo.enum';
 import { CreateConversationDto } from './dto/create-conversation.dto';
+import { StartConversationDto } from './dto/start-conversation.dto';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { Message, MessageOrigin } from '../messages/entities/message.entity';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -22,6 +23,20 @@ function inicioDoDiaLocal(dataIso: string): Date {
 function fimDoDiaLocal(dataIso: string): Date {
   const [ano, mes, dia] = dataIso.split('-').map(Number);
   return new Date(ano, mes - 1, dia, 23, 59, 59, 999);
+}
+
+// Telefone digitado à mão vem de tudo quanto é jeito: "(98) 99123-4567",
+// "98991234567", "5598991234567". Tira tudo que não é dígito e assume
+// Brasil quando veio só DDD + número (10 ou 11 dígitos) — é o único
+// mercado do produto hoje, e sem DDI a Evolution API rejeita. Com 12+
+// dígitos presume que o DDI já veio e não mexe. O julgamento final de
+// "esse número existe?" é da Evolution API, não daqui.
+function normalizarTelefoneDigitado(entrada: string): string {
+  const digitos = entrada.replace(/\D/g, '');
+  if (digitos.length === 10 || digitos.length === 11) {
+    return `55${digitos}`;
+  }
+  return digitos;
 }
 
 @Injectable()
@@ -49,6 +64,7 @@ export class ConversationsService {
     pagina?: number;
     por_pagina?: number;
     tipo?: ConversationTipo;
+    tag_id?: string;
   }) {
     const qb = this.conversationsRepository
       .createQueryBuilder('conversation')
@@ -70,6 +86,16 @@ export class ConversationsService {
       qb.andWhere('conversation.departamento_id = :departamento_id', {
         departamento_id: filtros.departamento_id,
       });
+    }
+    // Filtra pelas etiquetas do CLIENTE (client_tags casa por telefone, não
+    // por conversation_id — ver ClientTag) via EXISTS em vez de JOIN: um
+    // cliente com 3 etiquetas apareceria 3 vezes num join, e DISTINCT
+    // atrapalharia a paginação do getManyAndCount.
+    if (filtros.tag_id) {
+      qb.andWhere(
+        'EXISTS (SELECT 1 FROM client_tags ct WHERE ct.telefone = conversation.telefone AND ct.tag_id = :tag_id)',
+        { tag_id: filtros.tag_id },
+      );
     }
     // Busca por nome do cliente ou telefone — usado pela tela de conversas
     // finalizadas, pra achar "aquela conversa de terça com o cliente X".
@@ -162,6 +188,78 @@ export class ConversationsService {
 
     this.eventsGateway.emitNovaConversa(salva);
     return salva;
+  }
+
+  // "Chamar o cliente sem ele chamar": abre um atendimento a partir do
+  // painel, em vez de esperar a primeira mensagem cair no n8n. Três
+  // cuidados que a rota do n8n (create, acima) não precisa ter:
+  //
+  // 1. O número é digitado por gente — pode não ter WhatsApp, pode vir com
+  //    máscara, pode vir sem DDI. Confere na Evolution API ANTES de gravar
+  //    qualquer coisa, pra não encher a fila de conversa fantasma pra
+  //    número errado.
+  // 2. Grava o telefone do JID devolvido pela Evolution, não o digitado —
+  //    ver EvolutionService.verificarNumero pro porquê (nono dígito).
+  // 3. Já nasce em_atendimento no nome de quem iniciou: quem chamou o
+  //    cliente é quem vai falar com ele. Cair em "aguardando" faria outro
+  //    atendente assumir uma conversa que não começou.
+  //
+  // Não manda mensagem nenhuma: quem envia a primeira é o fluxo normal de
+  // POST /conversations/:id/messages (origem = atendente), que já cuida de
+  // assinatura, envio pela Evolution, persistência e socket.
+  async iniciar(
+    dto: StartConversationDto,
+    atendenteId: string,
+  ): Promise<{ conversa: Conversation; ja_existia: boolean }> {
+    const telefoneDigitado = normalizarTelefoneDigitado(dto.telefone);
+    if (telefoneDigitado.length < 10) {
+      throw new BadRequestException('Número de telefone incompleto.');
+    }
+
+    const { existe, telefone } = await this.evolutionService.verificarNumero(
+      dto.instance,
+      telefoneDigitado,
+    );
+    if (!existe) {
+      throw new BadRequestException(
+        'Esse número não tem WhatsApp (ou não foi possível confirmar). Confira o DDD e o número.',
+      );
+    }
+
+    // Reabrir a mesma conversa em vez de criar uma paralela: duas
+    // conversas em aberto pro mesmo telefone quebram o n8n, que resolve o
+    // atendimento ativo por telefone (findConversaAtivaPorTelefone) e
+    // gravaria a resposta do cliente em só uma delas. Devolve a que já
+    // existe, mesmo que seja de outro setor/atendente — o painel avisa em
+    // vez de roubar o atendimento de alguém.
+    const emAberto = await this.conversationsRepository
+      .createQueryBuilder('conversation')
+      .where('conversation.telefone = :telefone', { telefone })
+      .andWhere('conversation.status != :status', {
+        status: ConversationStatus.FINALIZADO,
+      })
+      .orderBy('conversation.criado_em', 'DESC')
+      .getOne();
+
+    if (emAberto) {
+      return { conversa: emAberto, ja_existia: true };
+    }
+
+    const conversa = await this.conversationsRepository.save(
+      this.conversationsRepository.create({
+        telefone,
+        // undefined (não null) porque Conversation.cliente_nome é tipado
+        // como string, mesmo sendo nullable no banco — TypeORM grava NULL.
+        cliente_nome: dto.cliente_nome?.trim() || undefined,
+        tipo: ConversationTipo.CLIENTE,
+        departamento_id: dto.departamento_id,
+        status: ConversationStatus.EM_ATENDIMENTO,
+        atendente_id: atendenteId,
+      }),
+    );
+
+    this.eventsGateway.emitNovaConversa(conversa);
+    return { conversa, ja_existia: false };
   }
 
   // Usada pela tela de chat (não existe GET /conversations/:id — só a lista

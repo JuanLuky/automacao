@@ -293,6 +293,37 @@ export interface UpdateTagPayload {
   cor?: string;
 }
 
+/**
+ * Etiqueta do catálogo somada a quantos clientes a têm hoje — é o que
+ * GET /tags devolve (a contagem vem agregada no backend). Onde só
+ * interessa nome/cor (pill, picker) o Tag puro continua servindo.
+ */
+export interface TagComUso extends Tag {
+  total_clientes: number;
+}
+
+/**
+ * "Chamar o cliente sem ele chamar" (POST /conversations/outbound). O
+ * telefone vai cru — o backend normaliza e confere no WhatsApp antes de
+ * abrir o atendimento.
+ */
+export interface StartConversationPayload {
+  telefone: string;
+  cliente_nome?: string;
+  departamento_id: string;
+  instance: string;
+}
+
+/**
+ * ja_existia = true quando já havia atendimento em aberto pro número: nada
+ * foi criado e "conversa" é a que já existia (possivelmente de outro setor
+ * ou de outro atendente).
+ */
+export interface StartConversationResult {
+  conversa: Conversation;
+  ja_existia: boolean;
+}
+
 /** Mapa telefone -> etiquetas atribuídas a esse cliente (ver GET /client-tags). */
 export type ClientTagsMap = Record<string, Tag[]>;
 

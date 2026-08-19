@@ -87,6 +87,55 @@ export class EvolutionService {
     return { id: corpo?.key?.id ?? null };
   }
 
+  // Confere se um número tem WhatsApp antes de abrir uma conversa a partir
+  // do painel (ver ConversationsService.iniciar). Devolve também o número
+  // canônico extraído do JID: no Brasil, celular habilitado antes da
+  // mudança do nono dígito existe no WhatsApp sem ele, e é esse formato que
+  // volta no webhook quando o cliente responde — gravar o que foi digitado
+  // faria a resposta abrir uma segunda conversa.
+  //
+  // Formato da resposta confirmado contra a instância real (POST
+  // /chat/whatsappNumbers): [{ jid, exists, number }].
+  async verificarNumero(
+    instance: string,
+    telefone: string,
+  ): Promise<{ existe: boolean; telefone: string }> {
+    const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+    const response = await fetch(`${baseUrl}/chat/whatsappNumbers/${instance}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: apiKey ?? '',
+      },
+      body: JSON.stringify({ numbers: [telefone] }),
+    });
+
+    if (!response.ok) {
+      const corpo = await response.text();
+      throw new Error(
+        `Falha ao verificar número na Evolution API (${response.status}): ${corpo}`,
+      );
+    }
+
+    const lista = (await response.json()) as Array<{
+      jid?: string;
+      exists?: boolean;
+      number?: string;
+    }>;
+    const item = Array.isArray(lista) ? lista[0] : undefined;
+
+    if (!item?.exists) {
+      return { existe: false, telefone };
+    }
+
+    // Só a parte antes do "@" — o resto do sistema guarda telefone sem o
+    // sufixo do JID pra tipo = cliente (ver Conversation.telefone).
+    const canonico = (item.jid ?? '').split('@')[0] || item.number || telefone;
+    return { existe: true, telefone: canonico };
+  }
+
   async getConnectionState(instance: string): Promise<Record<string, unknown>> {
     const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
     const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
