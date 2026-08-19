@@ -5,7 +5,9 @@ import {
   AlertCircle,
   Bot,
   Inbox,
+  Minus,
   Phone,
+  Plus,
   X,
   Loader2,
   MessageCirclePlus,
@@ -24,6 +26,7 @@ import { ConversaPanel } from "@/components/conversa/ConversaPanel";
 import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
+import { SIDEBAR_BASE_WIDTH, useSidebarZoom } from "@/hooks/useSidebarZoom";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useTags } from "@/hooks/useTags";
 import { useVerTodosSetores } from "@/hooks/useVerTodosSetores";
@@ -186,6 +189,8 @@ export default function AtendimentosPage() {
   const isSupervisor = user?.role === "supervisor";
   const { verTodos, setVerTodos } = useVerTodosSetores();
   const podeVerTodos = isAdmin || (isSupervisor && verTodos);
+  const { fator: zoomSidebar, aumentar: aumentarZoom, diminuir: diminuirZoom, podeAumentar, podeDiminuir } =
+    useSidebarZoom();
 
   const [tab, setTab] = useState<Aba>("em_atendimento");
   const ehGrupos = tab === "grupos";
@@ -416,10 +421,22 @@ export default function AtendimentosPage() {
           conversa. A seta de voltar do ConversaPanel (onSair) limpa a
           seleção e traz a lista de volta. */}
       <aside
-        className={`w-full shrink-0 flex-col border-r border-app bg-raised lg:flex lg:w-[360px] ${
+        style={{ ["--sidebar-w" as string]: `${SIDEBAR_BASE_WIDTH * zoomSidebar}px` }}
+        className={`w-full shrink-0 flex-col border-r border-app bg-raised lg:flex lg:w-[var(--sidebar-w)] ${
           selecionada ? "hidden" : "flex"
         }`}
       >
+        {/* Conteúdo com zoom — cresce/encolhe junto (texto, ícones, avatar,
+            espaçamento), como um Ctrl+"+" do navegador restrito a esta
+            coluna. `zoom` (não `transform`) porque participa do reflow
+            normal: o container acima já cresce na mesma proporção
+            (SIDEBAR_BASE_WIDTH * zoomSidebar), então nada é cortado nem
+            sobreposto. Os botões de +/- no rodapé ficam fora do zoom, de
+            propósito, pra não crescerem junto com o conteúdo. */}
+        <div
+          style={{ zoom: zoomSidebar }}
+          className="flex min-h-0 flex-1 flex-col"
+        >
         <div className="shrink-0 border-b border-app px-4 pb-3 pt-4">
           <div className="flex items-center justify-between gap-3">
             <h1 className="font-display text-lg font-semibold text-primary">
@@ -628,6 +645,38 @@ export default function AtendimentosPage() {
               ))}
             </ul>
           )}
+        </div>
+        </div>
+
+        {/* Zoom da sidebar — pedido pra ajudar clientes com dificuldade de
+            visualização. Fixo no rodapé, fora da área com zoom (ver
+            comentário acima), pra os botões não crescerem/encolherem
+            junto. Só tem efeito em telas lg+ (abaixo disso a lista já
+            ocupa a largura inteira). */}
+        <div className="hidden shrink-0 items-center justify-center gap-1 border-t border-app px-4 py-2 lg:flex">
+          <button
+            type="button"
+            onClick={diminuirZoom}
+            disabled={!podeDiminuir}
+            title="Diminuir zoom"
+            aria-label="Diminuir zoom da lista"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-sunken hover:text-primary disabled:pointer-events-none disabled:opacity-30"
+          >
+            <Minus size={14} />
+          </button>
+          <span className="px-1 text-[0.6875rem] text-muted">
+            Zoom {Math.round(zoomSidebar * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={aumentarZoom}
+            disabled={!podeAumentar}
+            title="Aumentar zoom"
+            aria-label="Aumentar zoom da lista"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-sunken hover:text-primary disabled:pointer-events-none disabled:opacity-30"
+          >
+            <Plus size={14} />
+          </button>
         </div>
       </aside>
 
