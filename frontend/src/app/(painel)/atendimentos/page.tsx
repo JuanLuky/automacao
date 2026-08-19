@@ -173,8 +173,9 @@ function LinhaConversa({
  * chat faz (mídia, áudio, respostas rápidas, transferir, finalizar)
  * funciona aqui sem duplicação.
  *
- * A /fila antiga continua existindo de propósito: é a tela que o escritório
- * já usa no dia a dia, e trocar por baixo sem validação seria arriscado.
+ * A /fila antiga foi removida (2026-08-19) — este inbox já cobria tudo que
+ * ela tinha (fila por setor, etiquetas, busca) e passou a ser a única tela
+ * de trabalho depois de validado no escritório. Login leva direto pra cá.
  */
 export default function AtendimentosPage() {
   const { user } = useAuth();
@@ -189,10 +190,15 @@ export default function AtendimentosPage() {
   const [tab, setTab] = useState<Aba>("em_atendimento");
   const ehGrupos = tab === "grupos";
   const ehBot = tab === "bot";
+  const ehFinalizadas = tab === "finalizado";
   const [departamentoId, setDepartamentoId] = useState("");
   const [tagId, setTagId] = useState("");
   const [busca, setBusca] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
+  // Filtro por período — só faz sentido em Finalizadas (única aba que pode
+  // acumular meses de histórico; as outras são sempre "agora").
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
 
   const [conversas, setConversas] = useState<Conversation[]>([]);
   const [botSessions, setBotSessions] = useState<BotSession[]>([]);
@@ -259,6 +265,9 @@ export default function AtendimentosPage() {
               por_pagina: POR_PAGINA,
               tag_id: tagId || undefined,
               busca: buscaDebounced || undefined,
+              ...(ehFinalizadas
+                ? { data_inicio: dataInicio || undefined, data_fim: dataFim || undefined }
+                : {}),
             },
       );
       setConversas(dados);
@@ -267,7 +276,18 @@ export default function AtendimentosPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [tab, ehGrupos, ehBot, filtroDepartamento, semSetor, tagId, buscaDebounced]);
+  }, [
+    tab,
+    ehGrupos,
+    ehBot,
+    ehFinalizadas,
+    filtroDepartamento,
+    semSetor,
+    tagId,
+    buscaDebounced,
+    dataInicio,
+    dataFim,
+  ]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -462,6 +482,33 @@ export default function AtendimentosPage() {
                   ))}
                 </Select>
               )}
+            </div>
+          )}
+
+          {ehFinalizadas && (
+            <div className="mt-2 flex gap-2">
+              <div className="flex-1">
+                <label className="mb-1 block text-[0.625rem] font-semibold uppercase tracking-wide text-muted">
+                  De
+                </label>
+                <input
+                  type="date"
+                  value={dataInicio}
+                  onChange={(e) => setDataInicio(e.target.value)}
+                  className="w-full rounded-lg border border-app bg-sunken px-2.5 py-1.5 text-[0.75rem] text-primary focus:border-tide-500 focus:outline-none focus:ring-2 focus:ring-tide-500/15"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="mb-1 block text-[0.625rem] font-semibold uppercase tracking-wide text-muted">
+                  Até
+                </label>
+                <input
+                  type="date"
+                  value={dataFim}
+                  onChange={(e) => setDataFim(e.target.value)}
+                  className="w-full rounded-lg border border-app bg-sunken px-2.5 py-1.5 text-[0.75rem] text-primary focus:border-tide-500 focus:outline-none focus:ring-2 focus:ring-tide-500/15"
+                />
+              </div>
             </div>
           )}
 

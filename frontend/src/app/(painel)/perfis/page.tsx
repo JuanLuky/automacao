@@ -30,7 +30,7 @@ export default function PerfisPage() {
   const [sucesso, setSucesso] = useState(false);
 
   useEffect(() => {
-    if (user && !isAdmin) router.replace("/fila");
+    if (user && !isAdmin) router.replace("/atendimentos");
   }, [user, isAdmin, router]);
 
   const carregar = useCallback(async () => {

@@ -42,7 +42,7 @@ export default function MensagensPage() {
   } = useQuickReplies();
 
   useEffect(() => {
-    if (user && !isAdmin) router.replace("/fila");
+    if (user && !isAdmin) router.replace("/atendimentos");
   }, [user, isAdmin, router]);
 
   // --- Mensagens automáticas (Assumir/Finalizar) ---

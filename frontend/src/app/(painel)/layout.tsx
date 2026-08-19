@@ -14,6 +14,7 @@ import {
   ListChecks,
   Loader2,
   LogOut,
+  Menu,
   MessageSquareText,
   Moon,
   QrCode,
@@ -24,6 +25,7 @@ import {
   Users,
   UserPlus,
   Waves,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
@@ -159,9 +161,29 @@ export default function PainelLayout({
   const { user, isAuthenticated, isLoading, signOut } = useAuth();
   const { theme, toggle, mounted } = useTheme();
 
+  // Abaixo de "lg" a nav não cabe ao lado da logo + tema + usuário + sair —
+  // vira um painel sanfona (grid-template-rows 0fr→1fr, sem medir altura em
+  // JS) que abre embaixo do header, empurrando o conteúdo em vez de
+  // sobrepor (mais simples que um drawer com backdrop/z-index).
+  const [menuAberto, setMenuAberto] = useState(false);
+
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace("/login");
   }, [isLoading, isAuthenticated, router]);
+
+  // Trocar de rota (clique num link do próprio menu) fecha o painel.
+  useEffect(() => {
+    setMenuAberto(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menuAberto) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuAberto(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [menuAberto]);
 
   if (isLoading || !isAuthenticated) {
     return (
@@ -203,7 +225,7 @@ export default function PainelLayout({
                   </span>
                 </div>
 
-                <nav className="flex items-center gap-1">
+                <nav className="hidden items-center gap-1 lg:flex">
                   {NAV.map(({ href, label, icon: Icon }) => {
                     const active = pathname?.startsWith(href);
                     return (
@@ -225,31 +247,116 @@ export default function PainelLayout({
                 </nav>
               </div>
 
-              <div className="flex items-center gap-4 border-l border-app pl-4">
+              <div className="flex items-center gap-3">
+                {/* Hamburguer só some em telas grandes — abaixo de "lg" ele
+                    substitui a <nav> acima, que fica hidden. Dois ícones
+                    empilhados (Menu/X) com rotate+fade cruzados fazem o
+                    morph suave em vez de trocar o ícone seco. */}
                 <button
                   type="button"
-                  onClick={toggle}
-                  aria-label={theme === "dark" ? "Usar tema claro" : "Usar tema escuro"}
-                  className="rounded-lg border border-app p-2 text-secondary transition-colors hover:border-mist-500 hover:text-primary"
+                  onClick={() => setMenuAberto((v) => !v)}
+                  aria-label={menuAberto ? "Fechar menu" : "Abrir menu"}
+                  aria-expanded={menuAberto}
+                  aria-controls="menu-mobile"
+                  className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-app text-secondary transition-colors hover:border-mist-500 hover:text-primary lg:hidden"
                 >
-                  {mounted && theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                  <Menu
+                    size={17}
+                    className={`absolute transition-all duration-300 ease-in-out ${
+                      menuAberto ? "rotate-90 opacity-0" : "rotate-0 opacity-100"
+                    }`}
+                  />
+                  <X
+                    size={17}
+                    className={`absolute transition-all duration-300 ease-in-out ${
+                      menuAberto ? "rotate-0 opacity-100" : "-rotate-90 opacity-0"
+                    }`}
+                  />
                 </button>
 
-                <div className="hidden text-right sm:block">
-                  <p className="text-[0.8125rem] font-medium text-primary">
-                    {user?.nome}
-                  </p>
-                  <UserRoleLabel role={user?.role} />
+                <div className="flex items-center gap-4 border-l border-app pl-4">
+                  <button
+                    type="button"
+                    onClick={toggle}
+                    aria-label={theme === "dark" ? "Usar tema claro" : "Usar tema escuro"}
+                    className="rounded-lg border border-app p-2 text-secondary transition-colors hover:border-mist-500 hover:text-primary"
+                  >
+                    {mounted && theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                  </button>
+
+                  <div className="hidden text-right sm:block">
+                    <p className="text-[0.8125rem] font-medium text-primary">
+                      {user?.nome}
+                    </p>
+                    <UserRoleLabel role={user?.role} />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={signOut}
+                    aria-label="Sair"
+                    className="rounded-lg border border-app p-2 text-secondary transition-colors hover:border-alert/50 hover:text-alert"
+                  >
+                    <LogOut size={16} />
+                  </button>
                 </div>
+              </div>
+            </div>
 
-                <button
-                  type="button"
-                  onClick={signOut}
-                  aria-label="Sair"
-                  className="rounded-lg border border-app p-2 text-secondary transition-colors hover:border-alert/50 hover:text-alert"
-                >
-                  <LogOut size={16} />
-                </button>
+            {/* Painel sanfona: grid-template-rows 0fr→1fr anima a altura real
+                do conteúdo sem medir nada em JS (max-height fixo erraria pra
+                mais ou pra menos dependendo de admin ter 8 itens a mais). */}
+            <div
+              id="menu-mobile"
+              className={`grid transition-[grid-template-rows] duration-300 ease-in-out lg:hidden ${
+                menuAberto ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+              }`}
+            >
+              <div className="overflow-hidden">
+                <nav className="flex flex-col gap-1 border-t border-app px-4 py-3">
+                  {NAV.map(({ href, label, icon: Icon }) => {
+                    const active = pathname?.startsWith(href);
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[0.875rem] font-medium transition-colors ${
+                          active
+                            ? "bg-tide-500/12 text-tide-500"
+                            : "text-secondary hover:bg-sunken hover:text-primary"
+                        }`}
+                      >
+                        <Icon size={16} />
+                        {label}
+                      </Link>
+                    );
+                  })}
+
+                  {user?.role === "admin" && (
+                    <>
+                      <p className="mb-1 mt-3 px-3 text-[0.6875rem] font-semibold uppercase tracking-wide text-muted">
+                        Administração
+                      </p>
+                      {NAV_ADMIN.map(({ href, label, icon: Icon }) => {
+                        const active = pathname?.startsWith(href);
+                        return (
+                          <Link
+                            key={href}
+                            href={href}
+                            className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[0.875rem] font-medium transition-colors ${
+                              active
+                                ? "bg-tide-500/12 text-tide-500"
+                                : "text-secondary hover:bg-sunken hover:text-primary"
+                            }`}
+                          >
+                            <Icon size={16} />
+                            {label}
+                          </Link>
+                        );
+                      })}
+                    </>
+                  )}
+                </nav>
               </div>
             </div>
           </header>

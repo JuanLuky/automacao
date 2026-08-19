@@ -29,7 +29,7 @@ export default function WhatsappPage() {
   const conectado = estado === "open";
 
   useEffect(() => {
-    if (user && !isAdmin) router.replace("/fila");
+    if (user && !isAdmin) router.replace("/atendimentos");
   }, [user, isAdmin, router]);
 
   const atualizar = useCallback(async () => {

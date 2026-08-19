@@ -43,7 +43,7 @@ export default function PublicarStatusPage() {
   const [erroForm, setErroForm] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user && !isAdmin) router.replace("/fila");
+    if (user && !isAdmin) router.replace("/atendimentos");
   }, [user, isAdmin, router]);
 
   const carregar = useCallback(async () => {

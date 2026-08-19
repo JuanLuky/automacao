@@ -43,7 +43,7 @@ export default function EtiquetasPage() {
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user && !isAdmin) router.replace("/fila");
+    if (user && !isAdmin) router.replace("/atendimentos");
   }, [user, isAdmin, router]);
 
   const tagsFiltradas = useMemo(() => {

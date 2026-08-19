@@ -11,7 +11,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (isLoading) return;
-    router.replace(isAuthenticated ? "/fila" : "/login");
+    router.replace(isAuthenticated ? "/atendimentos" : "/login");
   }, [isAuthenticated, isLoading, router]);
 
   return (

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import {
   AlertCircle,
   BookUser,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Loader2,
   MessageCircle,
@@ -85,6 +87,54 @@ function parseCsv(texto: string): CreateContactPayload[] {
     contatos.push({ nome: nomeCru, telefone: telefoneCru });
   });
   return contatos;
+}
+
+const POR_PAGINA = 10;
+
+// Reaproveitado nas duas listas (WhatsApp e Maré) — cada uma pagina de
+// forma independente, mas com o mesmo visual/comportamento já usado em
+// /atendimentos e no restante do painel.
+function Pager({
+  pagina,
+  total,
+  onAnterior,
+  onProxima,
+}: {
+  pagina: number;
+  total: number;
+  onAnterior: () => void;
+  onProxima: () => void;
+}) {
+  const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  if (total <= POR_PAGINA) return null;
+
+  return (
+    <div className="mt-3 flex items-center justify-between gap-4">
+      <p className="text-[0.8125rem] text-secondary">
+        Página {pagina} de {totalPaginas} · {total} contatos
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          className="!px-3 !py-2 text-[0.8125rem]"
+          disabled={pagina <= 1}
+          onClick={onAnterior}
+        >
+          <ChevronLeft size={15} />
+          Anterior
+        </Button>
+        <Button
+          variant="ghost"
+          className="!px-3 !py-2 text-[0.8125rem]"
+          disabled={pagina >= totalPaginas}
+          onClick={onProxima}
+        >
+          Próxima
+          <ChevronRight size={15} />
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function exportarCsv(whatsapp: ContatoNormalizado[], manuais: Contact[]) {
@@ -174,7 +224,18 @@ export default function ContatosPage() {
     carregarManuais();
   }, [carregarWhatsapp, carregarManuais]);
 
+  const [paginaWhatsapp, setPaginaWhatsapp] = useState(1);
+  const [paginaManuais, setPaginaManuais] = useState(1);
+
   const termo = busca.trim().toLowerCase();
+
+  // Trocar a busca invalida a página atual das duas listas — senão dava pra
+  // ficar preso na página 3 de uma busca nova que só tem 1 resultado.
+  useEffect(() => {
+    setPaginaWhatsapp(1);
+    setPaginaManuais(1);
+  }, [termo]);
+
   const whatsappFiltrados = useMemo(
     () =>
       !termo
@@ -193,6 +254,32 @@ export default function ContatosPage() {
           ),
     [contatosManuais, termo],
   );
+
+  // Paginação client-side: as duas listas já vêm inteiras da API (a do
+  // WhatsApp nunca é persistida, ver "Aba de Contatos" no CLAUDE.md), então
+  // paginar aqui evita renderizar centenas de linhas de uma vez sem
+  // precisar de um endpoint novo.
+  const whatsappPagina = useMemo(
+    () => whatsappFiltrados.slice((paginaWhatsapp - 1) * POR_PAGINA, paginaWhatsapp * POR_PAGINA),
+    [whatsappFiltrados, paginaWhatsapp],
+  );
+  const manuaisPagina = useMemo(
+    () => manuaisFiltrados.slice((paginaManuais - 1) * POR_PAGINA, paginaManuais * POR_PAGINA),
+    [manuaisFiltrados, paginaManuais],
+  );
+
+  // Se a lista encolher (ex: excluir o único contato da última página), a
+  // página atual pode ficar fora do intervalo válido — volta sozinha pra
+  // última página que ainda existe, em vez de mostrar uma tela vazia.
+  useEffect(() => {
+    const totalPaginas = Math.max(1, Math.ceil(whatsappFiltrados.length / POR_PAGINA));
+    if (paginaWhatsapp > totalPaginas) setPaginaWhatsapp(totalPaginas);
+  }, [whatsappFiltrados.length, paginaWhatsapp]);
+
+  useEffect(() => {
+    const totalPaginas = Math.max(1, Math.ceil(manuaisFiltrados.length / POR_PAGINA));
+    if (paginaManuais > totalPaginas) setPaginaManuais(totalPaginas);
+  }, [manuaisFiltrados.length, paginaManuais]);
 
   function limparFormulario() {
     setNome("");
@@ -430,34 +517,46 @@ export default function ContatosPage() {
             Nenhum contato sincronizado do WhatsApp{termo ? " para essa busca" : ""}.
           </p>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-app bg-raised">
-            <ul className="divide-y divide-app">
-              {whatsappFiltrados.map((c) => (
-                <li
-                  key={c.telefone}
-                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="text-[0.875rem] font-medium text-primary">{c.nome}</p>
-                    <p className="flex items-center gap-1 text-[0.8125rem] text-secondary">
-                      <Phone size={12} />
-                      {c.telefone}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setIniciandoConversa(c)}
-                    aria-label={`Iniciar conversa com ${c.nome}`}
-                    className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.8125rem] font-medium text-muted transition-colors hover:bg-tide-500/10 hover:text-tide-500"
+          <>
+            <div className="overflow-hidden rounded-xl border border-app bg-raised">
+              <ul className="divide-y divide-app">
+                {whatsappPagina.map((c) => (
+                  <li
+                    key={c.telefone}
+                    className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
                   >
-                    <MessageCirclePlus size={15} />
-                    Conversar
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+                    <div className="min-w-0">
+                      <p className="text-[0.875rem] font-medium text-primary">{c.nome}</p>
+                      <p className="flex items-center gap-1 text-[0.8125rem] text-secondary">
+                        <Phone size={12} />
+                        {c.telefone}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIniciandoConversa(c)}
+                      aria-label={`Iniciar conversa com ${c.nome}`}
+                      className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.8125rem] font-medium text-muted transition-colors hover:bg-tide-500/10 hover:text-tide-500"
+                    >
+                      <MessageCirclePlus size={15} />
+                      Conversar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <Pager
+              pagina={paginaWhatsapp}
+              total={whatsappFiltrados.length}
+              onAnterior={() => setPaginaWhatsapp((p) => Math.max(1, p - 1))}
+              onProxima={() =>
+                setPaginaWhatsapp((p) =>
+                  Math.min(Math.ceil(whatsappFiltrados.length / POR_PAGINA), p + 1),
+                )
+              }
+            />
+          </>
         )}
       </section>
 
@@ -476,51 +575,63 @@ export default function ContatosPage() {
             Nenhum contato adicionado{termo ? " para essa busca" : " ainda"}.
           </p>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-app bg-raised">
-            <ul className="divide-y divide-app">
-              {manuaisFiltrados.map((c) => (
-                <li
-                  key={c.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
-                >
-                  <div className="min-w-0">
-                    <p className="text-[0.875rem] font-medium text-primary">{c.nome}</p>
-                    <p className="flex items-center gap-1 text-[0.8125rem] text-secondary">
-                      <Phone size={12} />
-                      {c.telefone}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setIniciandoConversa(c)}
-                      aria-label={`Iniciar conversa com ${c.nome}`}
-                      className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.8125rem] font-medium text-muted transition-colors hover:bg-tide-500/10 hover:text-tide-500"
-                    >
-                      <MessageCirclePlus size={15} />
-                      Conversar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => abrirEditar(c)}
-                      aria-label={`Editar ${c.nome}`}
-                      className="rounded-md p-1.5 text-muted transition-colors hover:text-primary"
-                    >
-                      <Pencil size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setExcluindoAlvo(c)}
-                      aria-label={`Excluir ${c.nome}`}
-                      className="rounded-md p-1.5 text-muted transition-colors hover:text-alert"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <>
+            <div className="overflow-hidden rounded-xl border border-app bg-raised">
+              <ul className="divide-y divide-app">
+                {manuaisPagina.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[0.875rem] font-medium text-primary">{c.nome}</p>
+                      <p className="flex items-center gap-1 text-[0.8125rem] text-secondary">
+                        <Phone size={12} />
+                        {c.telefone}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setIniciandoConversa(c)}
+                        aria-label={`Iniciar conversa com ${c.nome}`}
+                        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.8125rem] font-medium text-muted transition-colors hover:bg-tide-500/10 hover:text-tide-500"
+                      >
+                        <MessageCirclePlus size={15} />
+                        Conversar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => abrirEditar(c)}
+                        aria-label={`Editar ${c.nome}`}
+                        className="rounded-md p-1.5 text-muted transition-colors hover:text-primary"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExcluindoAlvo(c)}
+                        aria-label={`Excluir ${c.nome}`}
+                        className="rounded-md p-1.5 text-muted transition-colors hover:text-alert"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <Pager
+              pagina={paginaManuais}
+              total={manuaisFiltrados.length}
+              onAnterior={() => setPaginaManuais((p) => Math.max(1, p - 1))}
+              onProxima={() =>
+                setPaginaManuais((p) =>
+                  Math.min(Math.ceil(manuaisFiltrados.length / POR_PAGINA), p + 1),
+                )
+              }
+            />
+          </>
         )}
       </section>
 
