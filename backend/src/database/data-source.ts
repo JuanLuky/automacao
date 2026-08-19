@@ -12,6 +12,7 @@ import { AutoMessages } from '../auto-messages/entities/auto-messages.entity';
 import { QuickReply } from '../quick-replies/entities/quick-reply.entity';
 import { Tag } from '../tags/entities/tag.entity';
 import { ClientTag } from '../tags/entities/client-tag.entity';
+import { BotSession } from '../bot-sessions/entities/bot-session.entity';
 
 dotenv.config();
 
@@ -35,6 +36,7 @@ export const AppDataSource = new DataSource({
     QuickReply,
     Tag,
     ClientTag,
+    BotSession,
   ],
   migrations: ['src/database/migrations/*.ts'],
   synchronize: false, // migrations controlam o schema fora do runtime da app

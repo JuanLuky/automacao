@@ -35,6 +35,7 @@ export class ConversationsController {
     @Query('por_pagina') por_pagina?: string,
     @Query('tipo') tipo?: ConversationTipo,
     @Query('tag_id') tag_id?: string,
+    @Query('sem_ativo') sem_ativo?: string,
   ) {
     return this.conversationsService.findAll({
       status,
@@ -46,6 +47,7 @@ export class ConversationsController {
       por_pagina: por_pagina ? parseInt(por_pagina, 10) : undefined,
       tipo,
       tag_id,
+      sem_ativo: sem_ativo === 'true',
     });
   }
 

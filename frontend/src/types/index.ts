@@ -335,6 +335,19 @@ export interface StartConversationResult {
   ja_existia: boolean;
 }
 
+/**
+ * Quem mandou mensagem, recebeu o menu de setores e ainda não escolheu
+ * nenhum — a aba "Bot" do inbox. Some da lista assim que vira atendimento.
+ */
+export interface BotSession {
+  id: string;
+  telefone: string;
+  /** Mensagens enviadas sem acertar um número de setor. */
+  tentativas: number;
+  criado_em: string;
+  atualizado_em: string;
+}
+
 /** Mapa telefone -> etiquetas atribuídas a esse cliente (ver GET /client-tags). */
 export type ClientTagsMap = Record<string, Tag[]>;
 

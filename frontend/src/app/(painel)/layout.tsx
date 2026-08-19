@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Clock,
   LayoutDashboard,
+  MessagesSquare,
   ListChecks,
   Loader2,
   LogOut,
@@ -33,9 +34,12 @@ import { QuickRepliesProvider } from "@/hooks/useQuickReplies";
 import { RoleLabelsProvider, useRoleLabels } from "@/hooks/useRoleLabels";
 import { TagsProvider } from "@/hooks/useTags";
 
+// "Fila" e "Grupos" saíram daqui: viraram abas dentro de /atendimentos, e
+// ficar nos dois lugares confundia (mesma lista, dois caminhos). As rotas
+// /fila e /grupos continuam existindo — são alvo de link salvo e do
+// "voltar" da tela de conversa.
 const NAV = [
-  { href: "/fila", label: "Fila", icon: ListChecks },
-  { href: "/grupos", label: "Grupos", icon: Users },
+  { href: "/atendimentos", label: "Atendimentos", icon: MessagesSquare },
   { href: "/contatos", label: "Contatos", icon: BookUser },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 ];
@@ -149,6 +153,9 @@ export default function PainelLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  // O inbox é a única tela de altura fixa (lista + conversa lado a lado);
+  // o resto do painel é página normal, centralizada e rolável.
+  const inbox = pathname?.startsWith("/atendimentos") ?? false;
   const { user, isAuthenticated, isLoading, signOut } = useAuth();
   const { theme, toggle, mounted } = useTheme();
 
@@ -172,7 +179,18 @@ export default function PainelLayout({
       <QuickRepliesProvider>
       <TagsProvider>
       <NotificationsProvider>
-        <div className="min-h-screen bg-surface">
+        {/* No inbox a página não rola: é uma coluna flex de altura fixa
+            (h-screen) com o <main> comendo o resto — assim a rolagem
+            acontece só dentro da lista e do histórico. Calcular
+            "100vh menos o header" na mão errava por 1px (a borda do
+            header), e a página ganhava um scroll fantasma. */}
+        <div
+          className={
+            inbox
+              ? "flex h-screen flex-col overflow-hidden bg-surface"
+              : "min-h-screen bg-surface"
+          }
+        >
           <header className="sticky top-0 z-10 border-b border-app bg-raised/80 backdrop-blur">
             <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
               <div className="flex items-center gap-8">
@@ -236,7 +254,11 @@ export default function PainelLayout({
             </div>
           </header>
 
-          <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+          {inbox ? (
+            <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+          ) : (
+            <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+          )}
         </div>
       </NotificationsProvider>
       </TagsProvider>

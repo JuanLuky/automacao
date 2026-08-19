@@ -10,6 +10,7 @@ import { ConversationStatus } from './enums/conversation-status.enum';
 import { ConversationTipo } from './enums/conversation-tipo.enum';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { StartConversationDto } from './dto/start-conversation.dto';
+import { BotSessionsService } from '../bot-sessions/bot-sessions.service';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { Message, MessageOrigin } from '../messages/entities/message.entity';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -59,6 +60,7 @@ export class ConversationsService {
     private readonly messagesRepository: Repository<Message>,
     private readonly eventsGateway: EventsGateway,
     private readonly evolutionService: EvolutionService,
+    private readonly botSessionsService: BotSessionsService,
   ) {}
 
   // Sem "pagina"/"por_pagina" devolve o array completo (comportamento
@@ -76,6 +78,7 @@ export class ConversationsService {
     por_pagina?: number;
     tipo?: ConversationTipo;
     tag_id?: string;
+    sem_ativo?: boolean;
   }) {
     const qb = this.conversationsRepository
       .createQueryBuilder('conversation')
@@ -97,6 +100,18 @@ export class ConversationsService {
       qb.andWhere('conversation.departamento_id = :departamento_id', {
         departamento_id: filtros.departamento_id,
       });
+    }
+    // Esconde o histórico de quem já voltou: um cliente com atendimento
+    // em aberto não deve aparecer também na aba de finalizados — pro
+    // atendente ele é UMA pessoa, e o lugar dela é onde está agora. Sem
+    // isso o mesmo nome saía em duas abas ao mesmo tempo.
+    if (filtros.sem_ativo) {
+      qb.andWhere(
+        `NOT EXISTS (SELECT 1 FROM conversations ativa
+                      WHERE ativa.telefone = conversation.telefone
+                        AND ativa.status != :statusFinalizado)`,
+        { statusFinalizado: ConversationStatus.FINALIZADO },
+      );
     }
     // Filtra pelas etiquetas do CLIENTE (client_tags casa por telefone, não
     // por conversation_id — ver ClientTag) via EXISTS em vez de JOIN: um
@@ -217,9 +232,16 @@ export class ConversationsService {
       .getOne();
 
     if (!conversa) {
+      // O n8n consulta esta rota pra CADA mensagem recebida, e só cai aqui
+      // quando não há atendimento aberto — ou seja, exatamente quando ele
+      // vai responder com o menu de setores. É o gancho perfeito pra saber
+      // quem está preso no bot sem precisar mudar o fluxo do n8n.
+      await this.botSessionsService.registrarTentativa(telefone);
       throw new NotFoundException('Nenhuma conversa ativa para esse telefone.');
     }
 
+    // Voltou a ter atendimento aberto: não está mais no bot.
+    await this.botSessionsService.encerrar(telefone);
     return conversa;
   }
 
@@ -246,6 +268,10 @@ export class ConversationsService {
         }),
       );
     }
+
+    // Escolheu o setor: sai da aba Bot e entra na fila. Se continuasse
+    // registrado apareceria nos dois lugares.
+    await this.botSessionsService.encerrar(salva.telefone);
 
     this.eventsGateway.emitNovaConversa(salva);
     return salva;
@@ -318,6 +344,9 @@ export class ConversationsService {
         atendente_id: atendenteId,
       }),
     );
+
+    // Vale também pra quem foi puxado da aba Bot por um atendente.
+    await this.botSessionsService.encerrar(conversa.telefone);
 
     this.eventsGateway.emitNovaConversa(conversa);
     return { conversa, ja_existia: false };

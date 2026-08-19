@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import type {
+  BotSession,
   ApiError,
   AutoMessages,
   BusinessHours,
@@ -202,6 +203,8 @@ export async function getConversationsPaginado(filtros: {
   por_pagina: number;
   tipo?: ConversationTipo;
   tag_id?: string;
+  /** Esconde clientes que já têm atendimento em aberto (usado na aba de finalizados). */
+  sem_ativo?: boolean;
 }): Promise<ConversationsPaginado> {
   const { data } = await api.get<ConversationsPaginado>("/conversations", {
     params: filtros,
@@ -263,6 +266,17 @@ export async function startConversation(
     payload,
   );
   return data;
+}
+
+/** Quem está parado no menu do bot, sem ter escolhido setor ainda. */
+export async function getBotSessions(): Promise<BotSession[]> {
+  const { data } = await api.get<BotSession[]>("/bot-sessions");
+  return data;
+}
+
+/** Tira da lista do bot sem abrir atendimento (número errado, spam). */
+export async function dismissBotSession(telefone: string): Promise<void> {
+  await api.delete(`/bot-sessions/${encodeURIComponent(telefone)}`);
 }
 
 export async function assumeConversation(id: string): Promise<Conversation> {

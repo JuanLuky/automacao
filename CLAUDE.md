@@ -673,6 +673,47 @@ No backend, `ConversationsService.anexarUltimaMensagem` — campo transiente `ul
 
 **Cuidado com `DISTINCT ON` no TypeORM**: escrito pelo query builder (`.select('DISTINCT ON (message.conversation_id) ...', 'alias')`) o TypeORM escapa a expressão como se fosse nome de coluna e gera SQL inválido — `syntax error at or near "DISTINCT"`, com 500 em **toda** a listagem de conversas (pego em teste, depois do build). A versão que funciona é SQL cru parametrizado via `repository.query(...)`, com `WHERE conversation_id = ANY($1)` recebendo o array de ids. Vale pra qualquer construção específica do Postgres que não tenha equivalente no query builder.
 
+### Inbox de duas colunas — `/atendimentos` (2026-08-18)
+
+Pedido do usuário depois de comparar com o **Zappy**: painel de atendimento numa tela só, lista à esquerda e conversa à direita, em vez de navegar da fila pro chat e voltar.
+
+**Rota nova, `/fila` e `/grupos` intactas de propósito.** O sistema está em uso real no escritório; trocar a tela de trabalho por uma versão não validada seria arriscado. Quando o inbox for aprovado no uso, a decisão é tirar "Fila" e "Grupos" da nav (as rotas podem continuar existindo).
+
+**`ConversaPanel` (`components/conversa/ConversaPanel.tsx`)** — o corpo do chat saiu da página `/conversas/[id]` e virou componente, recebendo `conversationId` por prop e avisando a saída por `onSair` (a rota leva pra fila; o inbox só limpa a seleção). A página virou um wrapper de 10 linhas e **continua existindo**: é alvo de deep link, do clique na notificação e do botão "Abrir" da fila. Assim mídia, áudio, respostas rápidas, transferir e finalizar funcionam nos dois lugares sem nenhuma duplicação.
+
+**Altura fixa sem cálculo mágico**: o `(painel)/layout.tsx` detecta a rota do inbox e troca o shell por `flex h-screen flex-col overflow-hidden`, com o `<main>` em `min-h-0 flex-1`. A primeira tentativa usava `h-[calc(100vh-4rem)]` e errava por 1px (a borda do header), dando um scroll fantasma na página inteira — medido no navegador. Com flex, a altura do header deixa de importar.
+
+**Cinco abas**: Todas (sem filtro de status), Na fila, Atendendo, Finalizadas e **Grupos**. Grupo não é status e sim `tipo` — não entra em fila, não é assumido e não tem setor —, então a aba manda `tipo=grupo` e omite status/setor/etiqueta, que devolveriam lista vazia. Cada aba mostra a contagem (`por_pagina: 1` só pra aproveitar o `total` que a rota paginada já devolve).
+
+**Nome de grupo na lista** vem do `useWhatsappAvatar` (nome ao vivo do WhatsApp): grupo não tem `cliente_nome` no banco, e sem isso a linha mostrava o JID cru (`1203...@g.us`), que não diz nada pra quem atende.
+
+**Responsivo**: abaixo de `lg` não cabem as duas colunas — mostra a lista **ou** a conversa, e a seta de voltar do painel limpa a seleção. Conferido no navegador nos dois tamanhos.
+
+**Cliente com atendimento aberto some do histórico** (`?sem_ativo=true`, usado só pela aba Finalizadas do inbox): reportado pelo usuário — "juan ainda ficou no finalizado sendo que tá aberto". O mesmo telefone tinha uma conversa em atendimento e duas finalizadas, então o nome saía nas duas abas ao mesmo tempo. Filtro é `NOT EXISTS` sobre o próprio `conversations` casando por telefone; conferido contra o banco real (a aba caiu pra 1 linha, a única pessoa sem atendimento em aberto). A `/fila` não manda o parâmetro e continua com o comportamento antigo.
+
+**Uma linha por cliente, não por atendimento.** Cada finalização cria uma `Conversation` nova pro mesmo telefone (ver `findConversaAtivaPorTelefone`), então na aba Todas o mesmo cliente aparecia três vezes — reportado pelo usuário ("Juan é só um e fica em vários lugares"). A lista agrupa por telefone e mostra o atendimento mais recente, como qualquer app de mensagem. Agrupamento é no cliente, sobre a página carregada (30 itens), não no banco: os contadores das abas continuam contando atendimentos, não clientes. O histórico dos atendimentos anteriores segue acessível pela `/fila`, aba Finalizadas.
+
+### Aba Bot — quem está preso no menu, antes de virar atendimento (2026-08-18)
+
+Buraco que o usuário apontou comparando com o Zappy: **o cliente que manda a primeira mensagem e ainda não digitou o número do setor não existia em lugar nenhum do painel.** A `Conversation` só nasce depois da escolha, então quem escrevia "oi", "preciso de ajuda" ou errava o número ficava conversando com o robô sem ninguém do escritório saber. Nas palavras dele: a fila é depois que o cliente digitou o número; o bot é enquanto ele ainda não digitou.
+
+**Descoberto sem tocar no n8n.** O fluxo já consulta `GET /conversations/by-phone/:telefone` a cada mensagem recebida, e só cai no 404 quando não há atendimento aberto — que é exatamente o momento em que ele vai responder com o menu. Então `findConversaAtivaPorTelefone` registra a sessão de bot no caminho do "não achou", e a apaga no caminho do "achou". Nenhum node novo, nenhum reimport de workflow (que exigiria reconfigurar credenciais, ver 2026-08-04).
+
+- Tabela `bot_sessions` (migration `AddBotSessions`): uma linha por telefone, com `tentativas` — quantas mensagens a pessoa mandou sem acertar um setor. 1 é normal, 4 é gente travada.
+- `INSERT ... ON CONFLICT (telefone) DO UPDATE` em vez de ler-e-decidir: o gancho dispara por mensagem recebida, e duas mensagens quase simultâneas do mesmo número criariam duas linhas.
+- Grupo não entra (não passa pelo menu de setores).
+- A sessão é apagada quando a conversa nasce — tanto pela escolha do setor (`create`, chamado pelo n8n) quanto por um atendente puxando a pessoa (`iniciar`). Sem isso a mesma pessoa apareceria na aba Bot e na fila ao mesmo tempo.
+- `GET /bot-sessions` lista; `DELETE /bot-sessions/:telefone` descarta sem abrir atendimento (número errado, propaganda) — se a pessoa escrever de novo, volta a aparecer.
+- No painel, cada linha tem **"Atender"** (abre o `NovaConversaModal` com o telefone preenchido — criar a conversa já remove a sessão) e um **X** pra ignorar.
+
+**Limite conhecido**: a lista mostra telefone, tempo e número de tentativas, mas **não o texto** do que a pessoa escreveu — a rota `by-phone` só recebe o telefone na URL. Mostrar a mensagem exigiria um node a mais no n8n mandando o texto; foi deixado de fora pra não obrigar a reimportar o workflow.
+
+**A aba "Todas" foi removida** a pedido do usuário na mesma conversa: com Bot, Na fila, Atendendo, Finalizadas e Grupos, uma visão "tudo junto" só embaralhava.
+
+**"Fila" e "Grupos" saíram da nav superior** quando viraram abas do inbox — o usuário reportou a duplicação nas duas ("grupo ainda tá em 2", "fila tá repetido"): mesma lista, dois caminhos. As rotas `/fila` e `/grupos` continuam existindo, são alvo de link salvo e do "voltar" da tela de conversa.
+
+**Validado no navegador** (dev server na 3002, sessão copiada da 3001 pra não precisar de login): colunas 360 + 1080 ocupando os 835px de altura, rolagem só por dentro (histórico com janela de 615px pra 1550px de conteúdo), composer dentro da tela, `document.scrollHeight === innerHeight` (página não rola), lista e conversa alternando certo abaixo de `lg`, aba Grupos trazendo os 2 grupos com nome resolvido e aba Todas com as 7 conversas.
+
 ### Identidade visual (não trocar sem motivo — já foi definida com o usuário)
 
 Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: `abyss` (fundo escuro, `#07161F`→`#1B4356`), `tide` (cor de ação — assumir, enviar, online, `#14B8A6`/`#2DD4BF`), `mist` (hierarquia secundária/muted), mais `waiting` (âmbar, status aguardando), `active` (= tide, em atendimento), `closed` (cinza, finalizado) e `alert` (erros). Tipografia: Bricolage Grotesque (`--font-display`, headings) + Inter (`--font-body`, corpo). Tokens de superfície (`--surface`, `--surface-raised`, `--surface-sunken`, `--border`) ficam em `globals.css` e trocam de valor entre claro/escuro via classe `.dark`. Assinatura visual: painel lateral da tela de login (`LiveQueuePanel`) com uma fila de exemplo animada (`animate-queue-in`) e uma linha de "maré" (`animate-tide-sweep`) — reforça que é um sistema ao vivo. A mesma animação `animate-queue-in` é reaproveitada nos itens reais da fila.

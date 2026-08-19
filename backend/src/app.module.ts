@@ -16,6 +16,8 @@ import { RoleLabelsModule } from './role-labels/role-labels.module';
 import { AutoMessagesModule } from './auto-messages/auto-messages.module';
 import { QuickRepliesModule } from './quick-replies/quick-replies.module';
 import { TagsModule } from './tags/tags.module';
+import { BotSessionsModule } from './bot-sessions/bot-sessions.module';
+import { BotSession } from './bot-sessions/entities/bot-session.entity';
 import { User } from './users/entities/user.entity';
 import { Department } from './departments/entities/department.entity';
 import { Conversation } from './conversations/entities/conversation.entity';
@@ -38,7 +40,7 @@ import { ClientTag } from './tags/entities/client-tag.entity';
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
         url: configService.get<string>('DATABASE_URL'),
-        entities: [User, Department, Conversation, Message, StatusUpdate, BusinessHours, Contact, RoleLabels, AutoMessages, QuickReply, Tag, ClientTag],
+        entities: [User, Department, Conversation, Message, StatusUpdate, BusinessHours, Contact, RoleLabels, AutoMessages, QuickReply, Tag, ClientTag, BotSession],
         // Schema controlado por migrations (npm run migration:run), não pelo runtime da app.
         // Ver src/database/migrations/ e src/database/data-source.ts.
         synchronize: false,
@@ -59,6 +61,7 @@ import { ClientTag } from './tags/entities/client-tag.entity';
     AutoMessagesModule,
     QuickRepliesModule,
     TagsModule,
+    BotSessionsModule,
   ],
 })
 export class AppModule {}
