@@ -9,7 +9,9 @@ import {
   Inbox,
   Loader2,
   MessageCirclePlus,
+  MessageSquare,
   Phone,
+  RotateCcw,
   Search,
   User as UserIcon,
 } from "lucide-react";
@@ -35,6 +37,7 @@ import {
   getClientTags,
   getConversationsPaginado,
   normalizeError,
+  reopenConversation,
   sendMessage,
 } from "@/lib/api";
 import { resolverTemplate } from "@/lib/quickReplies";
@@ -55,6 +58,7 @@ interface ConversaItemProps {
   onTagsChange: (tags: Tag[]) => void;
   onAssumir: () => void;
   onAbrir: () => void;
+  onReabrir: () => void;
 }
 
 // Componente próprio (em vez de inline no .map()) só pra poder chamar
@@ -68,6 +72,7 @@ function ConversaItem({
   onTagsChange,
   onAssumir,
   onAbrir,
+  onReabrir,
 }: ConversaItemProps) {
   const { fotoUrl, isLoading: carregandoAvatar } = useWhatsappAvatar(c.id);
 
@@ -113,6 +118,25 @@ function ConversaItem({
                 </span>
               )}
             </div>
+            {/* Texto vazio existe no banco (mídia antiga, gravada antes da
+                legenda padrão) — sem esse guard sobraria uma linha só com o
+                ícone, pior que não mostrar nada. */}
+            {c.ultima_mensagem?.texto ? (
+              <p className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[0.8125rem] text-secondary">
+                <MessageSquare size={13} className="shrink-0 text-muted" aria-hidden="true" />
+                {/* min-w-0 no item flex: sem isso o min-width:auto padrão
+                    impede o encolhimento e o truncate não corta nada. */}
+                <span className="min-w-0 truncate">
+                  {c.ultima_mensagem.origem !== "cliente" && (
+                    <span className="text-muted">
+                      {c.ultima_mensagem.origem === "atendente" ? "Equipe: " : "Sistema: "}
+                    </span>
+                  )}
+                  {c.ultima_mensagem.texto}
+                </span>
+              </p>
+            ) : null}
+
             <div className="mt-2">
               <ClientTagsPicker telefone={c.telefone} tagsAtuais={tags} onChange={onTagsChange} />
             </div>
@@ -121,7 +145,7 @@ function ConversaItem({
 
         <div className="flex items-center gap-3">
           <StatusBadge status={c.status} />
-          {tab === "aguardando" ? (
+          {tab === "aguardando" && (
             <Button
               variant="primary"
               className="!px-4 !py-2 text-[0.8125rem]"
@@ -129,7 +153,20 @@ function ConversaItem({
             >
               Assumir
             </Button>
-          ) : (
+          )}
+          {/* Reabrir direto da linha: antes só existia dentro do chat, o que
+              obrigava a abrir a conversa só pra clicar em reabrir. */}
+          {tab === "finalizado" && (
+            <Button
+              variant="primary"
+              className="!px-4 !py-2 text-[0.8125rem]"
+              onClick={onReabrir}
+            >
+              <RotateCcw size={15} />
+              Reabrir
+            </Button>
+          )}
+          {tab !== "aguardando" && (
             <Button variant="ghost" className="!px-4 !py-2 text-[0.8125rem]" onClick={onAbrir}>
               Abrir
             </Button>
@@ -166,6 +203,11 @@ export default function FilaPage() {
   // "Chamar o cliente sem ele chamar" — número digitado na hora. Partindo
   // de um contato salvo, o mesmo modal é aberto já preenchido em /contatos.
   const [novaConversaAberta, setNovaConversaAberta] = useState(false);
+  // Reabrir a partir da lista. "modo" diz qual dos dois botões do modal
+  // está rodando, pro spinner cair no botão certo (mesmo padrão do modal
+  // de assumir).
+  const [reabrindoAlvo, setReabrindoAlvo] = useState<Conversation | null>(null);
+  const [modoReabrir, setModoReabrir] = useState<"abrir" | "ficar" | null>(null);
   const [conversas, setConversas] = useState<Conversation[]>([]);
   const [tagsPorTelefone, setTagsPorTelefone] = useState<Record<string, Tag[]>>({});
   const [total, setTotal] = useState(0);
@@ -266,6 +308,31 @@ export default function FilaPage() {
   useSocketEvent("nova_conversa", carregar);
   useSocketEvent("conversa_atualizada", carregar);
   useSocketEvent("conversa_finalizada", carregar);
+
+  async function handleConfirmarReabrir(abrirDepois: boolean) {
+    if (!reabrindoAlvo) return;
+    const id = reabrindoAlvo.id;
+
+    setModoReabrir(abrirDepois ? "abrir" : "ficar");
+    setErro(null);
+    try {
+      await reopenConversation(id);
+      setReabrindoAlvo(null);
+      if (abrirDepois) {
+        router.push(`/conversas/${id}`);
+        return;
+      }
+      // Ficando na lista: a conversa some da aba Finalizadas (mudou de
+      // status), então recarrega pra sumir de verdade em vez de ficar uma
+      // linha fantasma até o próximo evento de socket.
+      await carregar();
+    } catch (error) {
+      setErro(normalizeError(error).message);
+      setReabrindoAlvo(null);
+    } finally {
+      setModoReabrir(null);
+    }
+  }
 
   async function handleConfirmarIniciar(comMensagem: boolean) {
     if (!iniciandoConversa) return;
@@ -457,6 +524,7 @@ export default function FilaPage() {
               tab={tab}
               naoLidas={unreadByConversation[c.id] ?? 0}
               tags={tagsPorTelefone[c.telefone] ?? []}
+              onReabrir={() => setReabrindoAlvo(c)}
               onTagsChange={(tags) =>
                 setTagsPorTelefone((prev) => ({ ...prev, [c.telefone]: tags }))
               }
@@ -494,6 +562,19 @@ export default function FilaPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={reabrindoAlvo !== null}
+        title={`Reabrir a conversa de ${reabrindoAlvo?.cliente_nome || "cliente sem nome"}?`}
+        description="A conversa volta pro atendimento de quem estava com ela e o cliente não é avisado — nenhuma mensagem é enviada."
+        confirmLabel="Reabrir e abrir"
+        secondaryLabel="Só reabrir"
+        onSecondary={() => handleConfirmarReabrir(false)}
+        secondaryLoading={modoReabrir === "ficar"}
+        loading={modoReabrir === "abrir"}
+        onConfirm={() => handleConfirmarReabrir(true)}
+        onCancel={() => setReabrindoAlvo(null)}
+      />
 
       <NovaConversaModal
         open={novaConversaAberta}

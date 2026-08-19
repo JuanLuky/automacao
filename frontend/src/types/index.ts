@@ -69,6 +69,17 @@ export interface Conversation {
   atendente?: User;
   criado_em: string;
   finalizado_em: string | null;
+
+  /**
+   * Última mensagem trocada, para a prévia na lista da fila — montada na
+   * leitura pelo backend (não existe no banco). null quando a conversa
+   * ainda não tem mensagem nenhuma.
+   */
+  ultima_mensagem?: {
+    texto: string;
+    origem: MessageOrigin;
+    criado_em: string;
+  } | null;
 }
 
 export interface ConversationsPaginado {

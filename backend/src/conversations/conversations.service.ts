@@ -39,6 +39,17 @@ function normalizarTelefoneDigitado(entrada: string): string {
   return digitos;
 }
 
+// Conversa + a última mensagem trocada, pra lista da fila mostrar prévia
+// sem precisar abrir o atendimento. Campo transiente: não existe na
+// entidade nem no banco, é montado na leitura.
+export type ConversationComPreview = Conversation & {
+  ultima_mensagem: {
+    texto: string;
+    origem: MessageOrigin;
+    criado_em: Date;
+  } | null;
+};
+
 @Injectable()
 export class ConversationsService {
   constructor(
@@ -128,7 +139,7 @@ export class ConversationsService {
     }
 
     if (!filtros.pagina || !filtros.por_pagina) {
-      return qb.getMany();
+      return qb.getMany().then((dados) => this.anexarUltimaMensagem(dados));
     }
 
     const pagina = Math.max(1, filtros.pagina);
@@ -138,7 +149,57 @@ export class ConversationsService {
       .skip((pagina - 1) * porPagina)
       .take(porPagina)
       .getManyAndCount()
-      .then(([dados, total]) => ({ dados, total, pagina, por_pagina: porPagina }));
+      .then(async ([dados, total]) => ({
+        dados: await this.anexarUltimaMensagem(dados),
+        total,
+        pagina,
+        por_pagina: porPagina,
+      }));
+  }
+
+  // Uma query só pra todas as conversas da página, em vez de uma por linha
+  // (a fila mostra 5 por página, mas o dashboard chama sem paginar).
+  // DISTINCT ON é específico do Postgres e resolve "a última linha de cada
+  // grupo" sem subquery correlacionada nem window function.
+  private async anexarUltimaMensagem(
+    conversas: Conversation[],
+  ): Promise<ConversationComPreview[]> {
+    if (conversas.length === 0) return [];
+
+    const ids = conversas.map((c) => c.id);
+    // SQL cru (parametrizado) em vez do query builder: o TypeORM escapa a
+    // expressão do select como se fosse nome de coluna e gera
+    // "DISTINCT ON (...)" inválido — testado, dá "syntax error at or near
+    // DISTINCT" e derruba a listagem inteira com 500.
+    const linhas: Array<{
+      conversation_id: string;
+      mensagem: string;
+      origem: MessageOrigin;
+      criado_em: Date;
+    }> = await this.messagesRepository.query(
+      `SELECT DISTINCT ON (conversation_id)
+              conversation_id, mensagem, origem, criado_em
+         FROM messages
+        WHERE conversation_id = ANY($1)
+        ORDER BY conversation_id, criado_em DESC`,
+      [ids],
+    );
+
+    const porConversa = new Map(linhas.map((l) => [l.conversation_id, l]));
+
+    return conversas.map((conversa) => {
+      const ultima = porConversa.get(conversa.id);
+      return {
+        ...conversa,
+        ultima_mensagem: ultima
+          ? {
+              texto: ultima.mensagem,
+              origem: ultima.origem,
+              criado_em: ultima.criado_em,
+            }
+          : null,
+      };
+    });
   }
 
   // Usado pelo n8n para saber se já existe uma conversa em aberto para o telefone.

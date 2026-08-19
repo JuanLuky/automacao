@@ -659,6 +659,20 @@ Quando `ja_existia`, o modal **não envia a mensagem digitada**: a conversa pode
 
 **Não testado no navegador**: o modal em si (abrir pela fila e pela lista de contatos, mandar a primeira mensagem de verdade pra um número com WhatsApp e ver a conversa abrir). Falta um número real de teste — validar antes de considerar pronto pra cliente.
 
+### Reabrir pela lista + prévia da última mensagem na fila (2026-08-18)
+
+Duas melhorias pedidas depois de o usuário comparar o Maré com o **Zappy** (ferramenta que o escritório dele já usa), com o comentário de que o outro está "mais enxuto".
+
+**Reabrir direto da lista.** Reabrir conversa finalizada já existia, mas só **dentro do chat** — pra reabrir era preciso ir na aba Finalizadas, entrar na conversa e só então clicar. Agora a linha da aba Finalizadas tem o botão "Reabrir" com um `ConfirmModal` de duas saídas (mesmo padrão do modal de Assumir): **"Reabrir e abrir"** leva pro chat, **"Só reabrir"** devolve a conversa pra fila e recarrega a lista (a conversa muda de status e sai da aba, então sem o reload ficaria uma linha fantasma até o próximo evento de socket). O botão "Abrir" continua ali do lado, pra quem só quer ler o histórico sem reabrir.
+
+Nada mudou no backend: `PATCH /conversations/:id/reopen` já cobria o caso, inclusive a trava de "já existe conversa em aberto pra esse telefone" (que continua valendo — o erro aparece na área de erro da fila).
+
+**Prévia da última mensagem na linha da fila.** A lista mostrava nome, setor, telefone, tempo, atendente e etiquetas, mas não *o que foi dito* — obrigando a abrir cada conversa pra saber em que pé está. Agora cada linha traz a última mensagem truncada, com prefixo "Equipe:" quando partiu do atendimento e "Sistema:" nas mensagens automáticas (mensagem do cliente vem sem prefixo, é o caso comum).
+
+No backend, `ConversationsService.anexarUltimaMensagem` — campo transiente `ultima_mensagem`, montado na leitura, não existe na entidade nem no banco. **Uma query só pra página inteira** (`DISTINCT ON (conversation_id) ... ORDER BY conversation_id, criado_em DESC`), não uma por linha: `DISTINCT ON` é específico do Postgres e resolve "a última linha de cada grupo" sem subquery correlacionada nem window function. Vale pros dois formatos de retorno do `findAll` (lista completa e paginado).
+
+**Cuidado com `DISTINCT ON` no TypeORM**: escrito pelo query builder (`.select('DISTINCT ON (message.conversation_id) ...', 'alias')`) o TypeORM escapa a expressão como se fosse nome de coluna e gera SQL inválido — `syntax error at or near "DISTINCT"`, com 500 em **toda** a listagem de conversas (pego em teste, depois do build). A versão que funciona é SQL cru parametrizado via `repository.query(...)`, com `WHERE conversation_id = ANY($1)` recebendo o array de ids. Vale pra qualquer construção específica do Postgres que não tenha equivalente no query builder.
+
 ### Identidade visual (não trocar sem motivo — já foi definida com o usuário)
 
 Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: `abyss` (fundo escuro, `#07161F`→`#1B4356`), `tide` (cor de ação — assumir, enviar, online, `#14B8A6`/`#2DD4BF`), `mist` (hierarquia secundária/muted), mais `waiting` (âmbar, status aguardando), `active` (= tide, em atendimento), `closed` (cinza, finalizado) e `alert` (erros). Tipografia: Bricolage Grotesque (`--font-display`, headings) + Inter (`--font-body`, corpo). Tokens de superfície (`--surface`, `--surface-raised`, `--surface-sunken`, `--border`) ficam em `globals.css` e trocam de valor entre claro/escuro via classe `.dark`. Assinatura visual: painel lateral da tela de login (`LiveQueuePanel`) com uma fila de exemplo animada (`animate-queue-in`) e uma linha de "maré" (`animate-tide-sweep`) — reforça que é um sistema ao vivo. A mesma animação `animate-queue-in` é reaproveitada nos itens reais da fila.
