@@ -80,11 +80,33 @@ export class ConversationsService {
     tag_id?: string;
     sem_ativo?: boolean;
   }) {
+    // "aguardando" é fila de verdade — quem chegou primeiro deve aparecer
+    // primeiro (FIFO), senão o atendente atenderia fora de ordem. Todo o
+    // resto (em_atendimento, grupo, sem filtro de status) é histórico/
+    // painel de trabalho, onde o mais recente primeiro é o que faz
+    // sentido, ordenado por quando a conversa começou (criado_em).
+    //
+    // "finalizado" é o único caso que precisa de uma coluna diferente:
+    // ordenar por criado_em ainda erra pra uma conversa REABERTA e
+    // finalizada de novo — o criado_em original fica velho (é de quando
+    // ela começou, não muda ao reabrir), então uma conversa finalizada há
+    // pouco tempo mas criada há dias ficava enterrada embaixo de outras
+    // criadas mais recentemente porém finalizadas há mais tempo (bug real,
+    // reproduzido com uma conversa de teste "reabrir" — reabriu e
+    // finalizou de novo hoje, mas continuava aparecendo abaixo de
+    // conversas mais antigas na lista por causa do criado_em antigo).
+    // finalizado_em reflete a última vez que ela foi encerrada, então é a
+    // coluna certa pra "mais recente primeiro" nessa aba.
+    const ordenarPorFinalizacao = filtros.status === ConversationStatus.FINALIZADO;
     const qb = this.conversationsRepository
       .createQueryBuilder('conversation')
       .leftJoinAndSelect('conversation.departamento', 'departamento')
       .leftJoinAndSelect('conversation.atendente', 'atendente')
-      .orderBy('conversation.criado_em', 'ASC');
+      .orderBy(
+        ordenarPorFinalizacao ? 'conversation.finalizado_em' : 'conversation.criado_em',
+        filtros.status === ConversationStatus.AGUARDANDO ? 'ASC' : 'DESC',
+        ordenarPorFinalizacao ? 'NULLS LAST' : undefined,
+      );
 
     // Sem "tipo" explícito, mantém o comportamento de sempre (só cliente) —
     // preserva a fila/dashboard existentes sem precisar tocar em cada

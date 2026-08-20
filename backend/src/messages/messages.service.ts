@@ -289,6 +289,14 @@ export class MessagesService {
       atendente: atendenteSemSenha,
       cliente_nome: conversa.cliente_nome,
       conversa_atendente_id: conversa.atendente_id,
+      // Status/tipo/setor da conversa — só no payload do socket (mesmo
+      // espírito de cliente_nome/conversa_atendente_id acima), pra
+      // NotificationsProvider decidir se notifica sem precisar buscar a
+      // conversa de novo: mensagem em conversa "aguardando" só interessa
+      // pra quem vê aquele setor na fila; "grupo" interessa a todo mundo.
+      conversa_status: conversa.status,
+      conversa_tipo: conversa.tipo,
+      conversa_departamento_id: conversa.departamento_id,
     });
     return { ...mensagem, atendente: atendenteSemSenha };
   }

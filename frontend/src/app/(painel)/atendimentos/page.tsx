@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Bot,
+  ChevronLeft,
+  ChevronRight,
   Inbox,
   Minus,
   Phone,
@@ -65,6 +67,10 @@ const TABS: { aba: Aba; label: string }[] = [
 // vale trazer uma página cheia de uma vez em vez de obrigar a paginar a
 // cada meia dúzia de conversas.
 const POR_PAGINA = 30;
+// Finalizadas é histórico, não fila de trabalho — pedido explícito: só as
+// 10 mais recentes, não as 30 de sempre (o backend já devolve mais recente
+// primeiro pra esse status, ver ConversationsService.findAll).
+const POR_PAGINA_FINALIZADAS = 10;
 
 interface LinhaProps {
   conversa: Conversation;
@@ -184,7 +190,7 @@ export default function AtendimentosPage() {
   const { user } = useAuth();
   const { departments } = useDepartments();
   const { tags: catalogoTags } = useTags();
-  const { unreadByConversation, clearUnread } = useNotifications();
+  const { unreadByConversation, clearUnread, marcarConversaAberta } = useNotifications();
   const isAdmin = user?.role === "admin";
   const isSupervisor = user?.role === "supervisor";
   const { verTodos, setVerTodos } = useVerTodosSetores();
@@ -204,6 +210,12 @@ export default function AtendimentosPage() {
   // acumular meses de histórico; as outras são sempre "agora").
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
+  // Paginação — só a aba Finalizadas precisa: é a única que acumula
+  // histórico (as outras são "trabalho de agora", cabem inteiras nos 30
+  // carregados). Sem isso, uma conversa finalizada mais cedo no dia ficava
+  // enterrada além da 1ª página sem nenhum jeito de chegar nela.
+  const [paginaFinalizadas, setPaginaFinalizadas] = useState(1);
+  const [totalFinalizadas, setTotalFinalizadas] = useState(0);
 
   const [conversas, setConversas] = useState<Conversation[]>([]);
   const [botSessions, setBotSessions] = useState<BotSession[]>([]);
@@ -250,7 +262,7 @@ export default function AtendimentosPage() {
     }
     setErro(null);
     try {
-      const { dados } = await getConversationsPaginado(
+      const { dados, total } = await getConversationsPaginado(
         ehGrupos
           ? {
               // Grupo não tem status nem setor — filtrar por eles
@@ -266,8 +278,8 @@ export default function AtendimentosPage() {
               // histórico de finalizados — ele está é na fila/atendendo.
               sem_ativo: tab === "finalizado" || undefined,
               departamento_id: filtroDepartamento,
-              pagina: 1,
-              por_pagina: POR_PAGINA,
+              pagina: ehFinalizadas ? paginaFinalizadas : 1,
+              por_pagina: ehFinalizadas ? POR_PAGINA_FINALIZADAS : POR_PAGINA,
               tag_id: tagId || undefined,
               busca: buscaDebounced || undefined,
               ...(ehFinalizadas
@@ -276,6 +288,7 @@ export default function AtendimentosPage() {
             },
       );
       setConversas(dados);
+      if (ehFinalizadas) setTotalFinalizadas(total);
     } catch (error) {
       setErro(normalizeError(error).message);
     } finally {
@@ -292,7 +305,16 @@ export default function AtendimentosPage() {
     buscaDebounced,
     dataInicio,
     dataFim,
+    paginaFinalizadas,
   ]);
+
+  // Volta pra página 1 sempre que a aba ou algum filtro muda — senão dava
+  // pra ficar preso, por exemplo, na página 3 de uma busca nova que só tem
+  // 1 resultado. Efeito separado de "carregar" pra não competir com a
+  // paginação em si (mudar de página não deve resetar a própria página).
+  useEffect(() => {
+    setPaginaFinalizadas(1);
+  }, [tab, filtroDepartamento, tagId, buscaDebounced, dataInicio, dataFim]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -377,6 +399,26 @@ export default function AtendimentosPage() {
     [conversasVisiveis, selecionadaId],
   );
 
+  // Avisa o NotificationsProvider qual conversa está com o ConversaPanel
+  // realmente montado ao lado, pra ele não disparar toast/badge de uma
+  // mensagem que já aparece ao vivo (ver marcarConversaAberta em
+  // useNotifications). Cliente "aguardando" selecionado NÃO conta: essa
+  // tela só mostra o prompt de "Assuma pra responder", sem nenhum
+  // histórico de mensagem — marcar como aberta ali suprimiria a
+  // notificação de uma mensagem que o atendente não está vendo em lugar
+  // nenhum (bug real: era exatamente esse caso que fazia mensagem nova na
+  // fila sumir sem badge nem toast quando a linha estava selecionada).
+  const painelVisivelId =
+    selecionada &&
+    !(selecionada.tipo !== "grupo" && selecionada.status === "aguardando")
+      ? selecionada.id
+      : null;
+
+  useEffect(() => {
+    marcarConversaAberta(painelVisivelId);
+    return () => marcarConversaAberta(null);
+  }, [painelVisivelId, marcarConversaAberta]);
+
   function handleSelecionar(conversa: Conversation) {
     setSelecionadaId(conversa.id);
     clearUnread(conversa.id);
@@ -388,8 +430,17 @@ export default function AtendimentosPage() {
     setErro(null);
     try {
       await assumeConversation(selecionada.id);
+      // Só troca a aba — NÃO chamar carregar() aqui: como setTab é
+      // assíncrono, essa chamada ainda usaria a versão de carregar()
+      // fechada sobre a aba anterior ("aguardando"), recarregando a lista
+      // com o filtro errado. A conversa recém-assumida sumia da lista
+      // carregada, selecionada virava null, e o painel voltava pro estado
+      // "Nenhum atendimento aberto" em vez do chat (bug real). Trocar a
+      // aba já dispara o useEffect que observa `carregar` (que muda de
+      // identidade quando `tab` muda) — o recarregamento com o filtro
+      // certo ("em_atendimento") acontece sozinho, e a mesma conversa
+      // selecionada aparece de novo assim que a lista nova chegar.
       setTab("em_atendimento");
-      await carregar();
     } catch (error) {
       setErro(normalizeError(error).message);
     } finally {
@@ -646,6 +697,35 @@ export default function AtendimentosPage() {
             </ul>
           )}
         </div>
+
+        {/* Paginação — só a aba Finalizadas, e só quando há mais de uma
+            página (senão fica um controle inútil ocupando espaço à toa). */}
+        {ehFinalizadas && totalFinalizadas > POR_PAGINA_FINALIZADAS && (
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t border-app px-4 py-2">
+            <button
+              type="button"
+              onClick={() => setPaginaFinalizadas((p) => Math.max(1, p - 1))}
+              disabled={paginaFinalizadas <= 1}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[0.75rem] font-medium text-secondary transition-colors hover:bg-sunken hover:text-primary disabled:pointer-events-none disabled:opacity-30"
+            >
+              <ChevronLeft size={14} />
+              Anterior
+            </button>
+            <span className="text-[0.6875rem] text-muted">
+              Página {paginaFinalizadas} de{" "}
+              {Math.max(1, Math.ceil(totalFinalizadas / POR_PAGINA_FINALIZADAS))}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPaginaFinalizadas((p) => p + 1)}
+              disabled={paginaFinalizadas >= Math.ceil(totalFinalizadas / POR_PAGINA_FINALIZADAS)}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[0.75rem] font-medium text-secondary transition-colors hover:bg-sunken hover:text-primary disabled:pointer-events-none disabled:opacity-30"
+            >
+              Próxima
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
         </div>
 
         {/* Zoom da sidebar — pedido pra ajudar clientes com dificuldade de

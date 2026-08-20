@@ -49,6 +49,13 @@ export interface Message {
   // retornado por GET /conversations/:id/messages.
   cliente_nome?: string | null;
   conversa_atendente_id?: string | null;
+  // Status/tipo/setor da conversa no momento do envio — junto com os dois
+  // campos acima, só existem no payload do evento "nova_mensagem" (ver
+  // MessagesService.create), usados pelo NotificationsProvider pra decidir
+  // se a mensagem é relevante pro atendente logado sem buscar a conversa.
+  conversa_status?: ConversationStatus;
+  conversa_tipo?: ConversationTipo;
+  conversa_departamento_id?: string | null;
   // Só preenchidos quando origem = cliente E a conversa é um grupo (várias
   // pessoas escrevem na mesma conversa) — quem realmente mandou essa
   // mensagem. Ver "Grupos do WhatsApp" no CLAUDE.md.
