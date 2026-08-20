@@ -28,7 +28,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ \"http://host.docker.internal:3000/conversations/by-phone/\" + $json.telefone }}",
+        "url": "={{ \"http://host.docker.internal:3000/conversations/by-phone/\" + $json.telefone + \"?texto=\" + encodeURIComponent($json.texto || '') }}",
         "options": {}
       },
       "name": "Verificar Conversa Ativa",

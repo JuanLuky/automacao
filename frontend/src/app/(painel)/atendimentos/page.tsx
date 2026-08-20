@@ -659,6 +659,11 @@ export default function AtendimentosPage() {
                         {formatRelativeTime(b.atualizado_em)}
                         {b.tentativas > 1 && ` · ${b.tentativas} mensagens sem escolher setor`}
                       </p>
+                      {b.mensagens.length > 0 && (
+                        <p className="mt-0.5 truncate text-[0.8125rem] text-muted">
+                          &ldquo;{b.mensagens[b.mensagens.length - 1].texto}&rdquo;
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"

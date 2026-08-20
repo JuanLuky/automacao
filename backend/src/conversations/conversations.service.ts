@@ -10,7 +10,10 @@ import { ConversationStatus } from './enums/conversation-status.enum';
 import { ConversationTipo } from './enums/conversation-tipo.enum';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { StartConversationDto } from './dto/start-conversation.dto';
-import { BotSessionsService } from '../bot-sessions/bot-sessions.service';
+import {
+  BotSessionMensagem,
+  BotSessionsService,
+} from '../bot-sessions/bot-sessions.service';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { Message, MessageOrigin } from '../messages/entities/message.entity';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -240,9 +243,14 @@ export class ConversationsService {
   }
 
   // Usado pelo n8n para saber se já existe uma conversa em aberto para o telefone.
-  // "Em aberto" = qualquer status diferente de finalizado.
+  // "Em aberto" = qualquer status diferente de finalizado. "texto" é opcional
+  // (query param novo, ver ConversationsController) — o n8n manda o texto da
+  // mensagem recebida pra alimentar o histórico da aba Bot; sem ele (ex:
+  // chamada antiga, ou alguém testando via curl) o comportamento é o mesmo
+  // de antes, só sem guardar o texto.
   async findConversaAtivaPorTelefone(
     telefone: string,
+    texto?: string,
   ): Promise<Conversation> {
     const conversa = await this.conversationsRepository
       .createQueryBuilder('conversation')
@@ -258,7 +266,7 @@ export class ConversationsService {
       // quando não há atendimento aberto — ou seja, exatamente quando ele
       // vai responder com o menu de setores. É o gancho perfeito pra saber
       // quem está preso no bot sem precisar mudar o fluxo do n8n.
-      await this.botSessionsService.registrarTentativa(telefone);
+      await this.botSessionsService.registrarTentativa(telefone, texto);
       throw new NotFoundException('Nenhuma conversa ativa para esse telefone.');
     }
 
@@ -281,7 +289,21 @@ export class ConversationsService {
 
     const salva = await this.conversationsRepository.save(conversa);
 
-    if (dto.mensagem_inicial) {
+    // Escolheu o setor: sai da aba Bot e entra na fila — e o que ela foi
+    // escrevendo enquanto presa lá (ver "Aba Bot" no CLAUDE.md) vira
+    // histórico desta conversa, pro atendente ler antes de assumir e saber
+    // se precisa transferir de setor. Sem isso o atendente só via o número
+    // digitado no menu ("3"), sem nenhum contexto do que a pessoa queria.
+    const historico = await this.botSessionsService.consumirHistorico(salva.telefone);
+    await this.inserirHistoricoBot(salva.id, historico);
+
+    // dto.mensagem_inicial normalmente É a última mensagem do histórico
+    // acima (o texto que validou a escolha do setor) — já foi inserida
+    // ali. Só insere separado se não bater (ex: chamada sem passar pelo
+    // fluxo normal de bot-session, ou telefone de grupo, que nunca gera
+    // sessão de bot).
+    const ultimoDoHistorico = historico.at(-1)?.texto?.trim();
+    if (dto.mensagem_inicial && dto.mensagem_inicial.trim() !== ultimoDoHistorico) {
       await this.messagesRepository.save(
         this.messagesRepository.create({
           conversation_id: salva.id,
@@ -291,12 +313,52 @@ export class ConversationsService {
       );
     }
 
-    // Escolheu o setor: sai da aba Bot e entra na fila. Se continuasse
-    // registrado apareceria nos dois lugares.
-    await this.botSessionsService.encerrar(salva.telefone);
-
     this.eventsGateway.emitNovaConversa(salva);
     return salva;
+  }
+
+  // Compartilhado por create() (n8n, cliente escolheu o setor) e iniciar()
+  // (atendente puxou alguém da aba Bot) — insere cada mensagem que a
+  // pessoa mandou enquanto presa no menu como uma Message normal de
+  // origem cliente, com o horário original em que foi escrita (não "agora"
+  // — importa pro atendente ver que, por exemplo, a pessoa esperou 10min
+  // entre uma tentativa e outra). Só entra um divisor de sistema quando há
+  // mais de uma mensagem: pro caso comum (pessoa só digitou o número certo
+  // de primeira) isso seria um aviso sem nada de novo pra mostrar.
+  private async inserirHistoricoBot(
+    conversationId: string,
+    historico: BotSessionMensagem[],
+  ): Promise<void> {
+    if (historico.length === 0) return;
+
+    if (historico.length > 1) {
+      const divisor = await this.messagesRepository.save(
+        this.messagesRepository.create({
+          conversation_id: conversationId,
+          origem: MessageOrigin.SISTEMA,
+          mensagem: 'Mensagens recebidas antes da escolha do setor:',
+        }),
+      );
+      await this.messagesRepository.update(divisor.id, {
+        criado_em: new Date(new Date(historico[0].criado_em).getTime() - 1000),
+      });
+    }
+
+    for (const item of historico) {
+      const mensagem = await this.messagesRepository.save(
+        this.messagesRepository.create({
+          conversation_id: conversationId,
+          origem: MessageOrigin.CLIENTE,
+          mensagem: item.texto,
+        }),
+      );
+      // save() já grava com criado_em = agora (via @CreateDateColumn) —
+      // o update() em seguida corrige pro horário real em que a pessoa
+      // escreveu, preservado no bot_sessions.mensagens.
+      await this.messagesRepository.update(mensagem.id, {
+        criado_em: new Date(item.criado_em),
+      });
+    }
   }
 
   // "Chamar o cliente sem ele chamar": abre um atendimento a partir do
@@ -367,8 +429,12 @@ export class ConversationsService {
       }),
     );
 
-    // Vale também pra quem foi puxado da aba Bot por um atendente.
-    await this.botSessionsService.encerrar(conversa.telefone);
+    // Vale também pra quem foi puxado da aba Bot por um atendente — o que a
+    // pessoa já tinha escrito lá (ver create() acima) vira histórico desta
+    // conversa também, mesmo raciocínio: dá pro atendente ler antes de
+    // mandar a primeira mensagem.
+    const historico = await this.botSessionsService.consumirHistorico(telefone);
+    await this.inserirHistoricoBot(conversa.id, historico);
 
     this.eventsGateway.emitNovaConversa(conversa);
     return { conversa, ja_existia: false };

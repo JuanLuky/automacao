@@ -351,6 +351,8 @@ export interface BotSession {
   telefone: string;
   /** Mensagens enviadas sem acertar um número de setor. */
   tentativas: number;
+  /** O que a pessoa foi escrevendo enquanto presa no menu, em ordem. */
+  mensagens: Array<{ texto: string; criado_em: string }>;
   criado_em: string;
   atualizado_em: string;
 }

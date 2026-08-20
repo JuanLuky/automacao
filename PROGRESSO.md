@@ -539,6 +539,25 @@ Testado via curl: número sem WhatsApp devolve 400 amigável sem criar conversa;
 
 **Não testado no navegador**: o modal em si — falta um número real de teste.
 
+### Histórico de mensagens de antes da escolha do setor, injetado na conversa (2026-08-20)
+
+Pedido do usuário: hoje, quando o atendente assume uma conversa, só vê o número do departamento que o cliente digitou ("3") — sem nenhum contexto do que a pessoa queria, mesmo que ela tenha mandado várias mensagens fragmentadas antes de acertar a escolha (ex: "Oi", "bom dia", "preciso de holerite", "3"). Pedido: mostrar esse histórico completo assim que o atendimento nasce, pra o atendente já saber o que a pessoa deseja e, se for de outro setor, transferir na hora.
+
+**Descoberto sem precisar de node novo no n8n, reaproveitando o mesmo gancho da aba Bot** (ver "Aba Bot" acima): `GET /conversations/by-phone/:telefone` já é chamado a cada mensagem recebida, e `registrarTentativa` já dispara nesse caminho quando ainda não existe conversa — só faltava o **texto** da mensagem chegar até ali (antes só telefone).
+
+**Backend**:
+- `bot_sessions` ganhou a coluna `mensagens` (jsonb, array de `{texto, criado_em}`, migration `AddBotSessionMensagens`) — `BotSessionsService.registrarTentativa(telefone, texto?)` agora concatena (`mensagens || $2::jsonb`) cada fragmento com texto não-vazio ao array existente, no mesmo `INSERT ... ON CONFLICT` que já incrementava `tentativas` (evita condição de corrida entre mensagens quase simultâneas, mesmo motivo de sempre). Mensagem de mídia sem legenda nessa fase (texto vazio) só conta pra `tentativas`, não entra no array — mesmo escopo de sempre (só texto).
+- `BotSessionsService.consumirHistorico(telefone)` — `DELETE ... RETURNING mensagens` (ler e apagar como uma operação só), substitui `encerrar()` nos dois pontos em que uma conversa nasce.
+- `ConversationsService.findConversaAtivaPorTelefone(telefone, texto?)` repassa o texto pro `registrarTentativa`. `ConversationsController.findByPhone` ganhou `@Query('texto')` — opcional, não quebra chamadas antigas.
+- `ConversationsService.create()` (n8n, escolha de setor) e `iniciar()` (atendente puxando da aba Bot) chamam `consumirHistorico` e um helper novo, `inserirHistoricoBot`, que insere cada mensagem do histórico como uma `Message` normal de origem `cliente`, com o horário **original** em que foi escrita (não "agora") — `save()` grava com `criado_em` automático e um `update()` em seguida corrige pro timestamp guardado no bot_sessions (mesmo truque de duas etapas já usado pra `evolution_message_id`). Um divisor de sistema ("Mensagens recebidas antes da escolha do setor:") só entra quando há **mais de uma** mensagem no histórico — pro caso comum (pessoa digitou o número certo de primeira) não vira um aviso vazio sem nada de novo.
+- **Evita duplicar a última mensagem**: o texto que validou a escolha do setor (`dto.mensagem_inicial`, mandado pelo n8n) normalmente É a mesma mensagem que já entrou como último item do histórico (foi capturada pelo mesmo `registrarTentativa`, na mesma execução que levou à criação da conversa) — `create()` só insere `mensagem_inicial` separadamente se o texto não bater com o último item do histórico (cobre chamadas que não passam pelo fluxo normal de bot-session, e conversa de grupo, que nunca gera sessão de bot).
+
+**n8n**: um único node editado (não um node novo — sem precisar reconfigurar credenciais): `Verificar Conversa Ativa` (GET by-phone) ganhou `?texto=` + `encodeURIComponent($json.texto || '')` na URL, mandando o texto da mensagem recebida. JSON validado (`json.load` sem erro) depois da edição.
+
+**Frontend**: `BotSession.mensagens` no tipo; aba Bot (`/atendimentos`) mostra a última mensagem entre aspas abaixo do contador de tentativas — fecha a limitação conhecida de sempre ("lista mostra telefone/tempo/tentativas, mas não o texto"), de graça já que o backend agora captura isso. Nenhuma mudança no chat em si — as mensagens de histórico entram como `Message` normais (origem cliente + divisor de sistema), e a tela de conversa já renderiza ambas do jeito de sempre.
+
+`tsc --noEmit` e `npm run build` limpos nos dois lados. **Não testado**: migration não rodada nesta sessão (Docker Desktop não estava de pé — `docker ps` falhou com "failed to connect to the docker API"), e workflow do n8n não reimportado/editado na UI real. Falta: subir a infra, rodar `npm run migration:run`, editar o node `Verificar Conversa Ativa` no n8n (ou reimportar o JSON) e testar com WhatsApp real — cliente mandando mensagens fragmentadas antes de escolher o setor, depois conferindo que aparecem no chat ao assumir.
+
 ---
 
 ## Status atual do projeto (checklist consolidado)
@@ -589,6 +608,7 @@ Testado via curl: número sem WhatsApp devolve 400 amigável sem criar conversa;
 - [x] Aba Bot (2026-08-18), validado no navegador
 - [x] `POST /conversations/outbound` + modal "Iniciar conversa" (2026-08-18) — testado via curl. **Falta teste do modal no navegador com número real.**
 - [x] Painel acessível pela rede local (2026-08-18) — testado via curl a partir da própria máquina. **Falta teste a partir de uma máquina real da rede.**
+- [x] Histórico de mensagens de antes da escolha do setor injetado na conversa (2026-08-20) — `tsc`/`build` limpos nos dois lados. **Falta rodar a migration (`AddBotSessionMensagens`), editar/reimportar o node `Verificar Conversa Ativa` no n8n e testar com WhatsApp real.**
 
 ## Ambiente de desenvolvimento
 
@@ -635,6 +655,7 @@ Motivado pela decisão de hospedar o Maré como SaaS (infra isolada por cliente 
 
 - **Chave compartilhada n8n↔backend** nas rotas públicas — trade-off de MVP, decisão do usuário (2026-07-30): manter assim por enquanto, corrigir só perto de produção.
 - **Validação visual no navegador pendente** (código completo, só falta o teste com cliente real): `/mensagens`, `/etiquetas` (+ pill/picker na fila e no chat), skeleton de carregamento, botão "Reabrir conversa" isolado no chat, filtro por etiqueta com dado real, modal "Iniciar conversa"/`NovaConversaModal` com número real, acesso ao painel a partir de uma máquina real da rede local.
+- **Histórico de mensagens pré-setor (2026-08-20)**: código completo (backend + n8n + frontend), `tsc`/`build` limpos — falta rodar `npm run migration:run` (migration `AddBotSessionMensagens`), editar o node `Verificar Conversa Ativa` no n8n (URL já ajustada no `fluxo-completo-com-backend.json`, mas o workflow rodando precisa ser atualizado — editar o node direto na UI evita ter que reconfigurar credenciais Redis/SMTP de um reimport completo) e testar com WhatsApp real: cliente mandando mensagens fragmentadas antes de escolher o setor, atendente assumindo e conferindo que o histórico aparece no chat.
 - **Figurinha (sticker), localização, contato e enquete** do WhatsApp — fora de escopo, avaliar só se o uso real pedir.
 - **Nome do grupo automático** já foi resolvido (ver "Avatares" acima) — item antigo, não é mais pendência.
 - **Badge/toast de notificação pra mensagem de grupo** — `useNotifications` não reage a mensagem de grupo hoje (`conversa_atendente_id` é sempre `null` pra grupo). Não pedido ainda, avaliar se fizer falta.

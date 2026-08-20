@@ -90,9 +90,17 @@ export class ConversationsController {
   // Rota usada pelo n8n para checar se já existe conversa em aberto.
   // Sem autenticação de atendente de propósito — quem protege esse endpoint
   // é a rede interna do Docker (n8n só é alcançável de dentro da rede).
+  //
+  // "texto" é opcional: o n8n manda o texto da mensagem que disparou essa
+  // checagem (query param, não corpo — GET) pra alimentar o histórico da
+  // aba Bot quando não existe conversa (ver
+  // ConversationsService.findConversaAtivaPorTelefone/BotSessionsService).
   @Get('by-phone/:telefone')
-  findByPhone(@Param('telefone') telefone: string) {
-    return this.conversationsService.findConversaAtivaPorTelefone(telefone);
+  findByPhone(
+    @Param('telefone') telefone: string,
+    @Query('texto') texto?: string,
+  ) {
+    return this.conversationsService.findConversaAtivaPorTelefone(telefone, texto);
   }
 
   // Rota usada pelo n8n para criar o atendimento quando o cliente escolhe o setor.

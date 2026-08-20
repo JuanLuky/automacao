@@ -12,7 +12,10 @@ import {
 // via que tinha alguém do outro lado tentando falar.
 //
 // Uma linha por telefone. Some assim que a conversa é criada — seja porque
-// a pessoa digitou o número, seja porque um atendente puxou ela pra si.
+// a pessoa digitou o número, seja porque um atendente puxou ela pra si —
+// e nesse momento o conteúdo de "mensagens" vira histórico da própria
+// Conversation (ver ConversationsService.create/iniciar), não fica só
+// aqui.
 @Entity('bot_sessions')
 export class BotSession {
   @PrimaryGeneratedColumn('uuid')
@@ -26,6 +29,14 @@ export class BotSession {
   // precisa de alguém humano.
   @Column('int', { default: 1 })
   tentativas: number;
+
+  // O que a pessoa foi escrevendo enquanto presa no menu — só os fragmentos
+  // com texto (mensagem de mídia nessa fase não é capturada, mesmo escopo
+  // de sempre). Guardado pra o atendente ver o histórico completo assim
+  // que a conversa nasce, em vez de só o número do setor escolhido no
+  // final ("2", sem contexto nenhum do que a pessoa queria).
+  @Column('jsonb', { default: () => "'[]'" })
+  mensagens: Array<{ texto: string; criado_em: string }>;
 
   @CreateDateColumn({ type: 'timestamptz' })
   criado_em: Date;
