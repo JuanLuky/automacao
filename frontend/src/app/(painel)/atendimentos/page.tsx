@@ -86,9 +86,15 @@ interface LinhaProps {
   previewOnHover?: boolean;
 }
 
-// Atraso antes do preview aparecer — evita abrir/buscar mensagens toda vez
-// que o mouse só passa por cima da lista a caminho de outra coisa.
-const HOVER_PREVIEW_DELAY_MS = 450;
+// Atraso antes do preview aparecer — pedido explícito: só depois de 3s
+// parado em cima da linha, pra não abrir toda vez que o mouse só passa de
+// caminho pra outra coisa.
+const HOVER_PREVIEW_DELAY_MS = 2000;
+// Atraso pra fechar depois que o mouse sai da linha — dá tempo dele chegar
+// no popover (que nasce alguns pixels ao lado, não colado) sem fechar no
+// meio do caminho. Cancelado se o mouse entrar na linha OU no popover
+// antes disso rodar.
+const HOVER_PREVIEW_CLOSE_DELAY_MS = 250;
 
 // Linha densa do inbox — componente próprio (não inline no .map) só pra
 // poder chamar useWhatsappAvatar por linha, mesmo motivo do ConversaItem
@@ -104,6 +110,7 @@ function LinhaConversa({
   const { nome: nomeWhatsapp, fotoUrl, isLoading: carregandoAvatar } = useWhatsappAvatar(c.id);
   const botaoRef = useRef<HTMLButtonElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [preview, setPreview] = useState<{ top: number; left: number } | null>(null);
 
   // Grupo não tem cliente_nome no banco (ver "Grupos" no CLAUDE.md) — sem
@@ -114,22 +121,37 @@ function LinhaConversa({
     nomeWhatsapp ||
     (c.tipo === "grupo" ? "Grupo sem nome" : c.telefone);
 
+  function cancelarFechamento() {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }
+
   function handleMouseEnter() {
     if (!previewOnHover || !botaoRef.current) return;
+    cancelarFechamento();
     const rect = botaoRef.current.getBoundingClientRect();
     hoverTimerRef.current = setTimeout(() => {
       setPreview({ top: rect.top, left: rect.right + 8 });
     }, HOVER_PREVIEW_DELAY_MS);
   }
 
+  // Fecha com um pequeno atraso (não na hora) — o popover nasce alguns
+  // pixels ao lado da linha, então tirar o mouse da linha em direção a ele
+  // passa um instante sem estar em cima de nenhum dos dois. Sem esse
+  // atraso, ir rolar a mensagem fechava o preview no meio do caminho
+  // (reportado pelo usuário). Cancelado se o mouse chegar na linha ou no
+  // próprio popover antes do tempo passar.
   function handleMouseLeave() {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-    setPreview(null);
+    closeTimerRef.current = setTimeout(() => setPreview(null), HOVER_PREVIEW_CLOSE_DELAY_MS);
   }
 
   useEffect(() => {
     return () => {
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     };
   }, []);
 
@@ -208,7 +230,13 @@ function LinhaConversa({
         )}
       </button>
       {preview && (
-        <ConversaPreviewPopover conversationId={c.id} titulo={titulo} {...preview} />
+        <ConversaPreviewPopover
+          conversationId={c.id}
+          titulo={titulo}
+          {...preview}
+          onMouseEnter={cancelarFechamento}
+          onMouseLeave={handleMouseLeave}
+        />
       )}
     </li>
   );

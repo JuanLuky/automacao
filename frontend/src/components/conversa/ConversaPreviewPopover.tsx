@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { getMessages, normalizeError } from "@/lib/api";
@@ -15,6 +15,12 @@ interface ConversaPreviewPopoverProps {
    * pelo scroll horizontal da lista (ver LinhaConversa). */
   top: number;
   left: number;
+  /** Repassados pro elemento raiz — LinhaConversa usa isso pra manter o
+   * preview aberto enquanto o mouse está em cima DELE (não só da linha),
+   * senão dava pra rolar: o mouse saindo da linha em direção ao popover
+   * fechava tudo no meio do caminho. */
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
 const ALTURA_MAX = 360;
@@ -30,9 +36,12 @@ export function ConversaPreviewPopover({
   titulo,
   top,
   left,
+  onMouseEnter,
+  onMouseLeave,
 }: ConversaPreviewPopoverProps) {
   const [mensagens, setMensagens] = useState<Message[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -50,6 +59,14 @@ export function ConversaPreviewPopover({
     };
   }, [conversationId]);
 
+  // Mostra sem cortar as mais recentes por padrão (a rolagem é pra ir
+  // atrás das mais antigas, não o contrário).
+  useEffect(() => {
+    if (mensagens && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [mensagens]);
+
   // Ajusta o topo pra caixa nunca nascer cortada embaixo da viewport —
   // mesma ideia de um tooltip que "sobe" quando não cabe abaixo do cursor.
   const topAjustado = Math.min(top, window.innerHeight - ALTURA_MAX - 16);
@@ -57,12 +74,15 @@ export function ConversaPreviewPopover({
   return createPortal(
     <div
       style={{ position: "fixed", top: Math.max(8, topAjustado), left }}
-      className="pointer-events-none z-50 w-80 animate-queue-in overflow-hidden rounded-xl border border-app bg-raised shadow-panel"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className="z-50 w-80 animate-queue-in overflow-hidden rounded-xl border border-app bg-raised shadow-panel"
     >
       <div className="border-b border-app px-3.5 py-2.5">
         <p className="truncate text-[0.8125rem] font-semibold text-primary">{titulo}</p>
       </div>
       <div
+        ref={scrollRef}
         style={{ maxHeight: ALTURA_MAX - 44 }}
         className="space-y-2 overflow-y-auto p-3"
       >
@@ -77,7 +97,7 @@ export function ConversaPreviewPopover({
             Sem mensagens ainda.
           </p>
         ) : (
-          mensagens.slice(-8).map((m) =>
+          mensagens.map((m) =>
             m.origem === "sistema" ? (
               <div key={m.id} className="flex justify-center">
                 <span className="rounded-full bg-sunken px-2.5 py-0.5 text-[0.6875rem] text-muted">
