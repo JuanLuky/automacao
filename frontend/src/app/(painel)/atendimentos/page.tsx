@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Bot,
@@ -18,6 +18,7 @@ import {
   Search,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { BotSessionModal } from "@/components/ui/BotSessionModal";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { NovaConversaModal } from "@/components/ui/NovaConversaModal";
@@ -25,6 +26,7 @@ import { Select } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
 import { TagBadge } from "@/components/ui/TagBadge";
 import { ConversaPanel } from "@/components/conversa/ConversaPanel";
+import { ConversaPreviewPopover } from "@/components/conversa/ConversaPreviewPopover";
 import { useAuth } from "@/hooks/useAuth";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -78,7 +80,15 @@ interface LinhaProps {
   naoLidas: number;
   tags: Tag[];
   onSelecionar: () => void;
+  /** Só true na aba "Atendendo" — clicar na linha já abre a conversa, então
+   * segurar o mouse é o gesto livre pra um preview sem trocar de tela (ver
+   * ConversaPreviewPopover). */
+  previewOnHover?: boolean;
 }
+
+// Atraso antes do preview aparecer — evita abrir/buscar mensagens toda vez
+// que o mouse só passa por cima da lista a caminho de outra coisa.
+const HOVER_PREVIEW_DELAY_MS = 450;
 
 // Linha densa do inbox — componente próprio (não inline no .map) só pra
 // poder chamar useWhatsappAvatar por linha, mesmo motivo do ConversaItem
@@ -89,8 +99,12 @@ function LinhaConversa({
   naoLidas,
   tags,
   onSelecionar,
+  previewOnHover,
 }: LinhaProps) {
   const { nome: nomeWhatsapp, fotoUrl, isLoading: carregandoAvatar } = useWhatsappAvatar(c.id);
+  const botaoRef = useRef<HTMLButtonElement>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [preview, setPreview] = useState<{ top: number; left: number } | null>(null);
 
   // Grupo não tem cliente_nome no banco (ver "Grupos" no CLAUDE.md) — sem
   // o nome ao vivo do WhatsApp a linha mostraria o JID cru
@@ -100,11 +114,33 @@ function LinhaConversa({
     nomeWhatsapp ||
     (c.tipo === "grupo" ? "Grupo sem nome" : c.telefone);
 
+  function handleMouseEnter() {
+    if (!previewOnHover || !botaoRef.current) return;
+    const rect = botaoRef.current.getBoundingClientRect();
+    hoverTimerRef.current = setTimeout(() => {
+      setPreview({ top: rect.top, left: rect.right + 8 });
+    }, HOVER_PREVIEW_DELAY_MS);
+  }
+
+  function handleMouseLeave() {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    setPreview(null);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
+
   return (
     <li>
       <button
+        ref={botaoRef}
         type="button"
         onClick={onSelecionar}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         aria-current={selecionada}
         className={`flex w-full gap-3 border-l-2 px-4 py-3 text-left transition-colors ${
           selecionada
@@ -171,6 +207,9 @@ function LinhaConversa({
           </span>
         )}
       </button>
+      {preview && (
+        <ConversaPreviewPopover conversationId={c.id} titulo={titulo} {...preview} />
+      )}
     </li>
   );
 }
@@ -229,9 +268,17 @@ export default function AtendimentosPage() {
   // aproveitar o "total" que a rota paginada já devolve.
   const [contagens, setContagens] = useState<Record<string, number>>({});
   const [novaConversaAberta, setNovaConversaAberta] = useState(false);
-  // Telefone puxado da aba Bot: abre o mesmo modal de iniciar conversa,
-  // já preenchido. Criar a conversa apaga a sessão de bot no backend.
-  const [atendendoDoBot, setAtendendoDoBot] = useState<string | null>(null);
+  // Telefone (+ nome já informado, se houver) puxado da aba Bot: abre o
+  // mesmo modal de iniciar conversa, já preenchido. Criar a conversa apaga
+  // a sessão de bot no backend.
+  const [atendendoDoBot, setAtendendoDoBot] = useState<{
+    telefone: string;
+    nome: string | null;
+  } | null>(null);
+  // Preview somente-leitura de uma sessão de bot (ver BotSessionModal) —
+  // separado de atendendoDoBot porque abrir pra ver não deve criar/assumir
+  // nada, ao contrário de clicar em "Atender".
+  const [verificandoBot, setVerificandoBot] = useState<BotSession | null>(null);
   const [reabrindoAlvo, setReabrindoAlvo] = useState<Conversation | null>(null);
   const [reabrindo, setReabrindo] = useState(false);
   const [assumindo, setAssumindo] = useState(false);
@@ -374,6 +421,9 @@ export default function AtendimentosPage() {
   useSocketEvent("conversa_atualizada", recarregarTudo);
   useSocketEvent("conversa_finalizada", recarregarTudo);
   useSocketEvent("nova_mensagem", carregar);
+  // Aba Bot não tinha nenhum evento em tempo real — precisava trocar de
+  // aba ou recarregar a página pra uma tentativa nova aparecer.
+  useSocketEvent("bot_session_atualizada", recarregarTudo);
 
   // Um cliente pode ter vários atendimentos (cada finalização cria uma
   // Conversation nova, ver findConversaAtivaPorTelefone) — sem agrupar, o
@@ -646,43 +696,56 @@ export default function AtendimentosPage() {
             ) : (
               <ul className="divide-y divide-app/60">
                 {botSessions.map((b) => (
-                  <li key={b.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-waiting/12 text-waiting">
-                      <Bot size={18} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-1.5 truncate text-[0.875rem] font-semibold text-primary">
-                        <Phone size={12} className="shrink-0 text-muted" />
-                        {b.telefone}
-                      </p>
-                      <p className="mt-0.5 text-[0.75rem] text-secondary">
-                        {formatRelativeTime(b.atualizado_em)}
-                        {b.tentativas > 1 && ` · ${b.tentativas} mensagens sem escolher setor`}
-                      </p>
-                      {b.mensagens.length > 0 && (
-                        <p className="mt-0.5 truncate text-[0.8125rem] text-muted">
-                          &ldquo;{b.mensagens[b.mensagens.length - 1].texto}&rdquo;
+                  <li key={b.id}>
+                    <button
+                      type="button"
+                      onClick={() => setVerificandoBot(b)}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-sunken"
+                    >
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-waiting/12 text-waiting">
+                        <Bot size={18} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[0.875rem] font-semibold text-primary">
+                          {b.nome || b.telefone}
                         </p>
-                      )}
+                        {b.nome && (
+                          <p className="flex items-center gap-1.5 text-[0.75rem] text-muted">
+                            <Phone size={11} className="shrink-0" />
+                            {b.telefone}
+                          </p>
+                        )}
+                        <p className="mt-0.5 text-[0.75rem] text-secondary">
+                          {formatRelativeTime(b.atualizado_em)}
+                          {b.tentativas > 1 && ` · ${b.tentativas} mensagens sem escolher setor`}
+                        </p>
+                        {b.mensagens.length > 0 && (
+                          <p className="mt-0.5 truncate text-[0.8125rem] text-muted">
+                            &ldquo;{b.mensagens[b.mensagens.length - 1].texto}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                    <div className="flex shrink-0 justify-end gap-1.5 px-4 pb-3">
+                      <button
+                        type="button"
+                        onClick={() => setAtendendoDoBot({ telefone: b.telefone, nome: b.nome })}
+                        className="rounded-lg bg-tide-500/12 px-2.5 py-1.5 text-[0.75rem] font-semibold text-tide-500 transition-colors hover:bg-tide-500/20"
+                      >
+                        Atender
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await dismissBotSession(b.telefone);
+                          carregar();
+                        }}
+                        aria-label={`Ignorar ${b.telefone}`}
+                        className="rounded-lg p-1.5 text-muted transition-colors hover:text-alert"
+                      >
+                        <X size={15} />
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setAtendendoDoBot(b.telefone)}
-                      className="shrink-0 rounded-lg bg-tide-500/12 px-2.5 py-1.5 text-[0.75rem] font-semibold text-tide-500 transition-colors hover:bg-tide-500/20"
-                    >
-                      Atender
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await dismissBotSession(b.telefone);
-                        carregar();
-                      }}
-                      aria-label={`Ignorar ${b.telefone}`}
-                      className="shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:text-alert"
-                    >
-                      <X size={15} />
-                    </button>
                   </li>
                 ))}
               </ul>
@@ -697,6 +760,7 @@ export default function AtendimentosPage() {
                   naoLidas={unreadByConversation[c.id] ?? 0}
                   tags={tagsPorTelefone[c.telefone] ?? []}
                   onSelecionar={() => handleSelecionar(c)}
+                  previewOnHover={tab === "em_atendimento"}
                 />
               ))}
             </ul>
@@ -854,10 +918,20 @@ export default function AtendimentosPage() {
           da lista do bot pelo backend. */}
       <NovaConversaModal
         open={atendendoDoBot !== null}
-        telefoneInicial={atendendoDoBot ?? undefined}
+        telefoneInicial={atendendoDoBot?.telefone}
+        nomeInicial={atendendoDoBot?.nome ?? undefined}
         onClose={() => {
           setAtendendoDoBot(null);
           carregar();
+        }}
+      />
+
+      <BotSessionModal
+        sessao={verificandoBot}
+        onClose={() => setVerificandoBot(null)}
+        onAtender={(sessao) => {
+          setVerificandoBot(null);
+          setAtendendoDoBot({ telefone: sessao.telefone, nome: sessao.nome });
         }}
       />
 

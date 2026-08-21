@@ -556,7 +556,11 @@ Pedido do usuário: hoje, quando o atendente assume uma conversa, só vê o núm
 
 **Frontend**: `BotSession.mensagens` no tipo; aba Bot (`/atendimentos`) mostra a última mensagem entre aspas abaixo do contador de tentativas — fecha a limitação conhecida de sempre ("lista mostra telefone/tempo/tentativas, mas não o texto"), de graça já que o backend agora captura isso. Nenhuma mudança no chat em si — as mensagens de histórico entram como `Message` normais (origem cliente + divisor de sistema), e a tela de conversa já renderiza ambas do jeito de sempre.
 
-`tsc --noEmit` e `npm run build` limpos nos dois lados. **Não testado**: migration não rodada nesta sessão (Docker Desktop não estava de pé — `docker ps` falhou com "failed to connect to the docker API"), e workflow do n8n não reimportado/editado na UI real. Falta: subir a infra, rodar `npm run migration:run`, editar o node `Verificar Conversa Ativa` no n8n (ou reimportar o JSON) e testar com WhatsApp real — cliente mandando mensagens fragmentadas antes de escolher o setor, depois conferindo que aparecem no chat ao assumir.
+`tsc --noEmit` e `npm run build` limpos nos dois lados.
+
+**Aplicado em produção local na sequência (mesmo dia)**: Docker subiu normalmente (containers já estavam de pé), `npm run migration:run` (testado run/revert/run contra o Postgres de dev, porta 5433) aplicou `AddBotSessionMensagens` sem erro. Backend/frontend reconstruídos e recriados (`docker compose ... build backend frontend` + `up -d`) pra pegar o código novo — sem isso o container antigo continuaria servindo a versão sem o histórico. Testado via curl contra o backend containerizado real: `GET /conversations/by-phone/:telefone?texto=...` grava corretamente em `bot_sessions.mensagens` (dado de teste conferido e apagado em seguida). Node `Verificar Conversa Ativa` editado **direto na UI do n8n** (via automação de browser, não reimport do JSON completo — evita ter que reconfigurar as credenciais de Redis/SMTP) e republicado; valor final conferido lendo o DOM do editor (`{{ "http://host.docker.internal:3000/conversations/by-phone/" + $json.telefone + "?texto=" + encodeURIComponent($json.texto || '') }}`), batendo exatamente com o `fluxo-completo-com-backend.json`.
+
+**Ainda falta só o teste com WhatsApp real** (cliente mandando mensagens fragmentadas antes de escolher o setor, atendente assumindo e conferindo que o histórico aparece no chat) — a cargo do usuário, que vai testar em tempo real pela extensão do Chrome.
 
 ---
 
@@ -608,7 +612,7 @@ Pedido do usuário: hoje, quando o atendente assume uma conversa, só vê o núm
 - [x] Aba Bot (2026-08-18), validado no navegador
 - [x] `POST /conversations/outbound` + modal "Iniciar conversa" (2026-08-18) — testado via curl. **Falta teste do modal no navegador com número real.**
 - [x] Painel acessível pela rede local (2026-08-18) — testado via curl a partir da própria máquina. **Falta teste a partir de uma máquina real da rede.**
-- [x] Histórico de mensagens de antes da escolha do setor injetado na conversa (2026-08-20) — `tsc`/`build` limpos nos dois lados. **Falta rodar a migration (`AddBotSessionMensagens`), editar/reimportar o node `Verificar Conversa Ativa` no n8n e testar com WhatsApp real.**
+- [x] Histórico de mensagens de antes da escolha do setor injetado na conversa (2026-08-20) — código completo, migration `AddBotSessionMensagens` rodada, backend/frontend containerizados reconstruídos, node `Verificar Conversa Ativa` editado e republicado no n8n. **Falta só testar com WhatsApp real.**
 
 ## Ambiente de desenvolvimento
 
@@ -655,7 +659,7 @@ Motivado pela decisão de hospedar o Maré como SaaS (infra isolada por cliente 
 
 - **Chave compartilhada n8n↔backend** nas rotas públicas — trade-off de MVP, decisão do usuário (2026-07-30): manter assim por enquanto, corrigir só perto de produção.
 - **Validação visual no navegador pendente** (código completo, só falta o teste com cliente real): `/mensagens`, `/etiquetas` (+ pill/picker na fila e no chat), skeleton de carregamento, botão "Reabrir conversa" isolado no chat, filtro por etiqueta com dado real, modal "Iniciar conversa"/`NovaConversaModal` com número real, acesso ao painel a partir de uma máquina real da rede local.
-- **Histórico de mensagens pré-setor (2026-08-20)**: código completo (backend + n8n + frontend), `tsc`/`build` limpos — falta rodar `npm run migration:run` (migration `AddBotSessionMensagens`), editar o node `Verificar Conversa Ativa` no n8n (URL já ajustada no `fluxo-completo-com-backend.json`, mas o workflow rodando precisa ser atualizado — editar o node direto na UI evita ter que reconfigurar credenciais Redis/SMTP de um reimport completo) e testar com WhatsApp real: cliente mandando mensagens fragmentadas antes de escolher o setor, atendente assumindo e conferindo que o histórico aparece no chat.
+- **Histórico de mensagens pré-setor (2026-08-20)**: código completo, migration rodada, containers reconstruídos, node do n8n editado e republicado — falta só testar com WhatsApp real: cliente mandando mensagens fragmentadas antes de escolher o setor, atendente assumindo e conferindo que o histórico aparece no chat.
 - **Figurinha (sticker), localização, contato e enquete** do WhatsApp — fora de escopo, avaliar só se o uso real pedir.
 - **Nome do grupo automático** já foi resolvido (ver "Avatares" acima) — item antigo, não é mais pendência.
 - **Badge/toast de notificação pra mensagem de grupo** — `useNotifications` não reage a mensagem de grupo hoje (`conversa_atendente_id` é sempre `null` pra grupo). Não pedido ainda, avaliar se fizer falta.

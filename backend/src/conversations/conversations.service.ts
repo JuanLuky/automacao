@@ -251,6 +251,7 @@ export class ConversationsService {
   async findConversaAtivaPorTelefone(
     telefone: string,
     texto?: string,
+    nome?: string,
   ): Promise<Conversation> {
     const conversa = await this.conversationsRepository
       .createQueryBuilder('conversation')
@@ -266,7 +267,7 @@ export class ConversationsService {
       // quando não há atendimento aberto — ou seja, exatamente quando ele
       // vai responder com o menu de setores. É o gancho perfeito pra saber
       // quem está preso no bot sem precisar mudar o fluxo do n8n.
-      await this.botSessionsService.registrarTentativa(telefone, texto);
+      await this.botSessionsService.registrarTentativa(telefone, texto, nome);
       throw new NotFoundException('Nenhuma conversa ativa para esse telefone.');
     }
 
@@ -348,7 +349,10 @@ export class ConversationsService {
       const mensagem = await this.messagesRepository.save(
         this.messagesRepository.create({
           conversation_id: conversationId,
-          origem: MessageOrigin.CLIENTE,
+          // Menu (re)enviado pelo bot entra como sistema — mesma origem do
+          // divisor acima, já que não foi nem o cliente nem um atendente
+          // quem escreveu. Ver BotSessionsService.registrarMensagemBot.
+          origem: item.origem === 'bot' ? MessageOrigin.SISTEMA : MessageOrigin.CLIENTE,
           mensagem: item.texto,
         }),
       );

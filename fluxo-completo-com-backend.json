@@ -28,7 +28,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ \"http://host.docker.internal:3000/conversations/by-phone/\" + $json.telefone + \"?texto=\" + encodeURIComponent($json.texto || '') }}",
+        "url": "={{ \"http://host.docker.internal:3000/conversations/by-phone/\" + $json.telefone + \"?texto=\" + encodeURIComponent($json.texto || '') + \"&nome=\" + encodeURIComponent($json.nome || '') }}",
         "options": {}
       },
       "name": "Verificar Conversa Ativa",
@@ -495,6 +495,27 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://host.docker.internal:3000/conversations/\" + $('Criar Conversa').item.json.id + \"/messages\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"origem\": \"sistema\", \"mensagem\": $json.resposta } }}",
+        "options": {}
+      },
+      "name": "Registrar Confirmação na Conversa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4380, 400],
+      "id": "node-log-confirmation-msg"
+    },
+    {
+      "parameters": {
         "jsCode": "const departamentos = $json.departamentos;\n\nconst linhas = departamentos\n  .map((d, indice) => `${indice + 1} - ${d.nome}`)\n  .join('\\n');\n\nreturn [\n  {\n    json: {\n      telefone: $json.telefone,\n      instance: $json.instance,\n      textoMenu: `Olá! Seja bem-vindo(a) 👋\\n\\nEscolha o departamento que você deseja falar:\\n\\n${linhas}\\n\\nDigite o número da opção desejada.`,\n    },\n  },\n];\n"
       },
       "name": "Montar Menu",
@@ -523,6 +544,27 @@
       "typeVersion": 4.2,
       "position": [3940, 620],
       "id": "node-send-menu"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://host.docker.internal:3000/bot-sessions/\" + $json.telefone + \"/mensagem-enviada\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"texto\": $json.textoMenu } }}",
+        "options": {}
+      },
+      "name": "Registrar Menu no Bot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4160, 620],
+      "id": "node-log-menu-bot"
     },
 
     {
@@ -776,11 +818,17 @@
     "Montar Menu": {
       "main": [[{ "node": "Enviar Menu", "type": "main", "index": 0 }]]
     },
+    "Enviar Menu": {
+      "main": [[{ "node": "Registrar Menu no Bot", "type": "main", "index": 0 }]]
+    },
     "Criar Conversa": {
       "main": [[{ "node": "Montar Confirmação", "type": "main", "index": 0 }]]
     },
     "Montar Confirmação": {
       "main": [[{ "node": "Enviar Confirmação de Setor", "type": "main", "index": 0 }]]
+    },
+    "Enviar Confirmação de Setor": {
+      "main": [[{ "node": "Registrar Confirmação na Conversa", "type": "main", "index": 0 }]]
     },
 
     "Schedule - Checar Conexão a Cada 5min": {

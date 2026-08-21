@@ -38,4 +38,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   emitConversaFinalizada(conversa: unknown) {
     this.server.emit('conversa_finalizada', conversa);
   }
+
+  // Sem payload — a aba Bot só recarrega a lista (mesmo padrão dos outros
+  // eventos aqui), disparado a cada tentativa nova/descartada/consumida.
+  emitBotSessionAtualizada() {
+    this.server.emit('bot_session_atualizada');
+  }
 }

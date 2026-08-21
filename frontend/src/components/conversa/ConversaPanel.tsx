@@ -677,8 +677,12 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
 
         {mensagens.map((m) =>
           m.origem === "sistema" ? (
+            // rounded-xl (não rounded-full) porque agora também entra o
+            // menu de setores reenviado pelo bot — várias linhas, não só
+            // avisos curtos como "Conversa transferida." — em pílula
+            // ficaria uma oval esticada e ilegível.
             <div key={m.id} className="flex justify-center">
-              <span className="rounded-full bg-sunken px-3 py-1 text-[0.75rem] text-muted">
+              <span className="max-w-[85%] whitespace-pre-wrap rounded-xl bg-sunken px-3.5 py-2 text-center text-[0.75rem] leading-relaxed text-muted">
                 {m.mensagem}
               </span>
             </div>

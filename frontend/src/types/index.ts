@@ -349,10 +349,15 @@ export interface StartConversationResult {
 export interface BotSession {
   id: string;
   telefone: string;
+  /** pushName do WhatsApp — mesmo campo que vira Conversation.cliente_nome
+   * quando a conversa nasce. Pode não ter vindo ainda (mensagem de mídia
+   * na primeira tentativa, etc). */
+  nome: string | null;
   /** Mensagens enviadas sem acertar um número de setor. */
   tentativas: number;
-  /** O que a pessoa foi escrevendo enquanto presa no menu, em ordem. */
-  mensagens: Array<{ texto: string; criado_em: string }>;
+  /** O que a pessoa foi escrevendo enquanto presa no menu, em ordem —
+   * intercalado com o menu (re)enviado pelo bot ("origem": "bot"). */
+  mensagens: Array<{ texto: string; criado_em: string; origem?: "cliente" | "bot" }>;
   criado_em: string;
   atualizado_em: string;
 }

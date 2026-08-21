@@ -24,6 +24,14 @@ export class BotSession {
   @Column('text', { unique: true })
   telefone: string;
 
+  // pushName do WhatsApp (mesmo campo que vira Conversation.cliente_nome
+  // quando a conversa nasce) — pré-preenche o modal de "Atender" na aba
+  // Bot sem o atendente ter que digitar de novo um nome que o cliente já
+  // informou. Nullable: mensagem de mídia sem legenda não tem pushName
+  // capturado separado, e a primeira tentativa pode não ter vindo com nome.
+  @Column('text', { nullable: true })
+  nome: string | null;
+
   // Quantas mensagens a pessoa mandou sem acertar um número de setor. 1 é
   // o normal (acabou de chegar); 4 é gente travada, que provavelmente
   // precisa de alguém humano.
