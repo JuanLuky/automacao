@@ -505,7 +505,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"origem\": \"sistema\", \"mensagem\": $json.resposta } }}",
+        "jsonBody": "={{ { \"origem\": \"sistema\", \"mensagem\": $('Montar Confirmação').item.json.resposta } }}",
         "options": {}
       },
       "name": "Registrar Confirmação na Conversa",
@@ -548,7 +548,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ \"http://host.docker.internal:3000/bot-sessions/\" + $json.telefone + \"/mensagem-enviada\" }}",
+        "url": "={{ \"http://host.docker.internal:3000/bot-sessions/\" + $('Montar Menu').item.json.telefone + \"/mensagem-enviada\" }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -557,7 +557,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"texto\": $json.textoMenu } }}",
+        "jsonBody": "={{ { \"texto\": $('Montar Menu').item.json.textoMenu } }}",
         "options": {}
       },
       "name": "Registrar Menu no Bot",
