@@ -80,9 +80,11 @@ interface LinhaProps {
   naoLidas: number;
   tags: Tag[];
   onSelecionar: () => void;
-  /** Só true na aba "Atendendo" — clicar na linha já abre a conversa, então
-   * segurar o mouse é o gesto livre pra um preview sem trocar de tela (ver
-   * ConversaPreviewPopover). */
+  /** Só true nas abas "Atendendo" e "Fila". Em "Atendendo", clicar na linha
+   * já abre a conversa — segurar o mouse é o gesto livre pra um preview sem
+   * trocar de tela. Em "Fila" a conversa ainda nem foi assumida (sem
+   * composer, ver painel principal), então é o único jeito de ver as
+   * mensagens antes de decidir assumir (ver ConversaPreviewPopover). */
   previewOnHover?: boolean;
 }
 
@@ -788,7 +790,7 @@ export default function AtendimentosPage() {
                   naoLidas={unreadByConversation[c.id] ?? 0}
                   tags={tagsPorTelefone[c.telefone] ?? []}
                   onSelecionar={() => handleSelecionar(c)}
-                  previewOnHover={tab === "em_atendimento"}
+                  previewOnHover={tab === "em_atendimento" || tab === "aguardando"}
                 />
               ))}
             </ul>

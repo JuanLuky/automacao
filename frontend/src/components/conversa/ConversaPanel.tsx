@@ -53,6 +53,7 @@ import {
   transferConversation,
 } from "@/lib/api";
 import { formatTime } from "@/lib/time";
+import { ehAvisoAdministrativo } from "@/lib/messages";
 import { resolverTemplate } from "@/lib/quickReplies";
 import type { Conversation, Message, MessageTipo, Tag } from "@/types";
 
@@ -675,8 +676,16 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
           </p>
         )}
 
-        {mensagens.map((m) =>
-          m.origem === "sistema" ? (
+        {mensagens.map((m) => {
+          // Menu de setores e confirmação mandados pelo bot: origem
+          // "sistema" igual aos avisos administrativos, mas é conteúdo de
+          // verdade enviado ao cliente pelo número da empresa — mesmo "lado"
+          // de quem manda mensagem por aqui, por isso usa a mesma cor/UI do
+          // atendente em vez da pílula escura.
+          const mensagemBot = m.origem === "sistema" && !ehAvisoAdministrativo(m.mensagem);
+          const estiloAtendente = m.origem === "atendente" || mensagemBot;
+
+          return m.origem === "sistema" && !mensagemBot ? (
             // rounded-xl (não rounded-full) porque agora também entra o
             // menu de setores reenviado pelo bot — várias linhas, não só
             // avisos curtos como "Conversa transferida." — em pílula
@@ -689,8 +698,13 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
           ) : (
             <div
               key={m.id}
-              className={`flex flex-col ${m.origem === "atendente" ? "items-end" : "items-start"}`}
+              className={`flex flex-col ${estiloAtendente ? "items-end" : "items-start"}`}
             >
+              {mensagemBot && (
+                <span className="mb-1 px-1 text-[0.75rem] font-medium text-muted">
+                  Mensagem automática
+                </span>
+              )}
               {m.origem === "atendente" && m.atendente && (
                 <span className="mb-1 px-1 text-[0.75rem] font-semibold text-tide-400">
                   {
@@ -736,7 +750,7 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
                 )}
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[0.875rem] leading-relaxed ${
-                  m.origem === "atendente"
+                  estiloAtendente
                     ? "bg-tide-500 text-abyss-900"
                     : "border border-app bg-raised text-primary"
                 }`}
@@ -753,7 +767,7 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
                 )}
                 <p
                   className={`mt-1 text-[0.6875rem] ${
-                    m.origem === "atendente"
+                    estiloAtendente
                       ? "text-abyss-900/60"
                       : "text-muted"
                   }`}
@@ -762,8 +776,8 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
                 </p>
               </div>
             </div>
-          ),
-        )}
+          );
+        })}
       </div>
 
       {anexo && (

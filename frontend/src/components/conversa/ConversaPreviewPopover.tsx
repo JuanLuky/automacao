@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { getMessages, normalizeError } from "@/lib/api";
+import { ehAvisoAdministrativo } from "@/lib/messages";
 import { formatDateTime } from "@/lib/time";
 import type { Message } from "@/types";
 
@@ -97,8 +98,11 @@ export function ConversaPreviewPopover({
             Sem mensagens ainda.
           </p>
         ) : (
-          mensagens.map((m) =>
-            m.origem === "sistema" ? (
+          mensagens.map((m) => {
+            const mensagemBot = m.origem === "sistema" && !ehAvisoAdministrativo(m.mensagem);
+            const estiloAtendente = m.origem === "atendente" || mensagemBot;
+
+            return m.origem === "sistema" && !mensagemBot ? (
               <div key={m.id} className="flex justify-center">
                 <span className="rounded-full bg-sunken px-2.5 py-0.5 text-[0.6875rem] text-muted">
                   {m.mensagem}
@@ -107,11 +111,11 @@ export function ConversaPreviewPopover({
             ) : (
               <div
                 key={m.id}
-                className={`flex flex-col ${m.origem === "atendente" ? "items-end" : "items-start"}`}
+                className={`flex flex-col ${estiloAtendente ? "items-end" : "items-start"}`}
               >
                 <div
                   className={`max-w-[85%] rounded-xl px-3 py-1.5 text-[0.75rem] leading-snug ${
-                    m.origem === "atendente"
+                    estiloAtendente
                       ? "bg-tide-500 text-abyss-900"
                       : "border border-app bg-sunken text-primary"
                   }`}
@@ -122,8 +126,8 @@ export function ConversaPreviewPopover({
                   {formatDateTime(m.criado_em)}
                 </p>
               </div>
-            ),
-          )
+            );
+          })
         )}
       </div>
     </div>,

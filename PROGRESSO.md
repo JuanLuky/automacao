@@ -562,6 +562,24 @@ Pedido do usuário: hoje, quando o atendente assume uma conversa, só vê o núm
 
 **Ainda falta só o teste com WhatsApp real** (cliente mandando mensagens fragmentadas antes de escolher o setor, atendente assumindo e conferindo que o histórico aparece no chat) — a cargo do usuário, que vai testar em tempo real pela extensão do Chrome.
 
+### Legibilidade das mensagens do bot no chat (2026-08-24)
+
+Pedido do usuário: o menu de setores e a confirmação de setor (texto mandado pelo bot/n8n direto pro WhatsApp do cliente) apareciam como pílula centralizada escura (`bg-sunken` + `text-muted`) — a mesma UI usada pra avisos administrativos curtos ("Conversa transferida.", "Conversa reaberta."). Pra texto de várias linhas (o menu inteiro), ficava escuro demais e difícil de ler. Pedido: mesma cor das mensagens que o atendente manda pelo painel.
+
+Origem "sistema" cobre dois casos bem diferentes hoje: avisos administrativos gerados pelo próprio backend (curtos) e conteúdo de verdade que o bot manda ao cliente (menu reenviado, confirmação de setor — ambos inseridos com `MessageOrigin.SISTEMA`, ver `inserirHistoricoBot` e o node "Registrar Confirmação na Conversa" do n8n). Sem um campo de subtipo no banco, a distinção ficou só no frontend: `frontend/src/lib/messages.ts` (`ehAvisoAdministrativo`) reconhece os avisos administrativos por prefixo fixo do texto (`"Conversa transferida"`, `"Conversa reaberta."`, `"Mensagens recebidas antes da escolha do setor:"`) — o resto que chega com origem sistema é tratado como mensagem de bot de verdade.
+
+`ConversaPanel.tsx` e `ConversaPreviewPopover.tsx` (mesmo problema no preview ao passar o mouse na fila) passaram a estilizar mensagem de bot igual à do atendente (`bg-tide-500`, alinhada à direita), com um rótulo pequeno "Mensagem automática" acima do balão (mesmo padrão já usado pra "Enviado pelo celular") pra não confundir o atendente pensando que foi um colega quem escreveu. Avisos administrativos continuam como pílula discreta, sem mudança.
+
+Rebuild + restart do container `frontend` (`docker compose ... build frontend` + `up -d frontend`) pra aplicar — o painel em `localhost:3001` é o build de produção containerizado, não pega mudança de código sem rebuild. `tsc --noEmit` limpo. **Testado no navegador** contra a conversa real "Juan10" (departamento TI): menu e confirmação renderizam no tom `tide-500` com o rótulo, avisos administrativos não testados nesta sessão (mudança não afeta esse caminho).
+
+### Preview ao passar o mouse também na aba Fila (2026-08-24)
+
+Pedido do usuário, mesma sessão: o preview com hover de 2s (`ConversaPreviewPopover`, já existente na aba "Atendendo" — ver commit "adjust hover preview delays and enhance mouse event handling for conversation popover") também na aba **Fila** (`aguardando`), antes de assumir.
+
+Fazia falta especificamente aí: conversa em "aguardando" não renderiza o `ConversaPanel` no painel principal ao clicar — só mostra um botão "Assumir atendimento" (ver o `else if` em `AtendimentosPage`, `selecionada.status === "aguardando"`), sem nenhuma forma de ler as mensagens antes de decidir assumir. Mudança de uma linha: `LinhaConversa` (`frontend/src/app/(painel)/atendimentos/page.tsx`) já recebia `previewOnHover` como prop — só trocou `previewOnHover={tab === "em_atendimento"}` por `previewOnHover={tab === "em_atendimento" || tab === "aguardando"}`. `HOVER_PREVIEW_DELAY_MS` já estava em 2000ms (pedido anterior), não mudou.
+
+Rebuild + restart do container `frontend`. `tsc --noEmit` limpo. **Testado no navegador**: aba Fila, hover ~3s sobre a linha "Juan10" (aguardando, setor Contabilidade) — popover abriu com o histórico completo, incluindo o estilo novo das mensagens de bot da entrada acima.
+
 ---
 
 ## Status atual do projeto (checklist consolidado)
