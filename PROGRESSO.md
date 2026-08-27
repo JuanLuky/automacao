@@ -580,6 +580,14 @@ Fazia falta especificamente aí: conversa em "aguardando" não renderiza o `Conv
 
 Rebuild + restart do container `frontend`. `tsc --noEmit` limpo. **Testado no navegador**: aba Fila, hover ~3s sobre a linha "Juan10" (aguardando, setor Contabilidade) — popover abriu com o histórico completo, incluindo o estilo novo das mensagens de bot da entrada acima.
 
+### Validação em tempo real via WhatsApp real (2026-08-27)
+
+Usuário confirmou, testando ao vivo pelo WhatsApp (não mais só navegador/curl), os três itens acima:
+
+- **Histórico de mensagens de antes da escolha do setor (2026-08-20)**: cliente mandando mensagens fragmentadas antes de escolher o setor, atendente assumindo e conferindo que o histórico aparece no chat — era o único item da lista ainda pendente desse teste, agora fechado.
+- **Legibilidade das mensagens do bot no chat (2026-08-24)**: menu de setores e confirmação de setor no tom `tide-500` com o rótulo "Mensagem automática".
+- **Preview ao passar o mouse também na aba Fila (2026-08-24)**: hover na aba Fila abrindo o preview com o histórico.
+
 ---
 
 ## Status atual do projeto (checklist consolidado)
@@ -630,7 +638,9 @@ Rebuild + restart do container `frontend`. `tsc --noEmit` limpo. **Testado no na
 - [x] Aba Bot (2026-08-18), validado no navegador
 - [x] `POST /conversations/outbound` + modal "Iniciar conversa" (2026-08-18) — testado via curl. **Falta teste do modal no navegador com número real.**
 - [x] Painel acessível pela rede local (2026-08-18) — testado via curl a partir da própria máquina. **Falta teste a partir de uma máquina real da rede.**
-- [x] Histórico de mensagens de antes da escolha do setor injetado na conversa (2026-08-20) — código completo, migration `AddBotSessionMensagens` rodada, backend/frontend containerizados reconstruídos, node `Verificar Conversa Ativa` editado e republicado no n8n. **Falta só testar com WhatsApp real.**
+- [x] Histórico de mensagens de antes da escolha do setor injetado na conversa (2026-08-20), testado e validado com WhatsApp real (2026-08-27)
+- [x] Legibilidade das mensagens do bot no chat, tom `tide-500` (2026-08-24), testado e validado com WhatsApp real (2026-08-27)
+- [x] Preview ao passar o mouse também na aba Fila (2026-08-24), testado e validado com WhatsApp real (2026-08-27)
 
 ## Ambiente de desenvolvimento
 
@@ -677,7 +687,16 @@ Motivado pela decisão de hospedar o Maré como SaaS (infra isolada por cliente 
 
 - **Chave compartilhada n8n↔backend** nas rotas públicas — trade-off de MVP, decisão do usuário (2026-07-30): manter assim por enquanto, corrigir só perto de produção.
 - **Validação visual no navegador pendente** (código completo, só falta o teste com cliente real): `/mensagens`, `/etiquetas` (+ pill/picker na fila e no chat), skeleton de carregamento, botão "Reabrir conversa" isolado no chat, filtro por etiqueta com dado real, modal "Iniciar conversa"/`NovaConversaModal` com número real, acesso ao painel a partir de uma máquina real da rede local.
-- **Histórico de mensagens pré-setor (2026-08-20)**: código completo, migration rodada, containers reconstruídos, node do n8n editado e republicado — falta só testar com WhatsApp real: cliente mandando mensagens fragmentadas antes de escolher o setor, atendente assumindo e conferindo que o histórico aparece no chat.
 - **Figurinha (sticker), localização, contato e enquete** do WhatsApp — fora de escopo, avaliar só se o uso real pedir.
 - **Nome do grupo automático** já foi resolvido (ver "Avatares" acima) — item antigo, não é mais pendência.
 - **Badge/toast de notificação pra mensagem de grupo** — `useNotifications` não reage a mensagem de grupo hoje (`conversa_atendente_id` é sempre `null` pra grupo). Não pedido ainda, avaliar se fizer falta.
+
+### `SETUP-NOVA-MAQUINA.md` — roteiro pra máquina nova (2026-08-27)
+
+Pedido do usuário: um arquivo único com o passo a passo de colocar o projeto de pé do zero (`.env`, `npm install`, infra Docker, migrations/seed, Evolution API, n8n), pra não precisar redescobrir isso a cada máquina nova.
+
+Motivado pelo que aconteceu nesta mesma sessão, numa máquina nova (Linux/WSL2, sem containers nem `node_modules` ainda): `npm install` rodado em backend/frontend; `docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build` **falhou de primeira** — `network automacao_atendimento-network declared as external, but could not be found`, porque `docker-compose.app.yml` marca a rede como `external: true` (só existe depois que `docker-compose.yml` sobe sozinho uma vez). Corrigido subindo `docker-compose.yml` isolado primeiro, depois os dois juntos só pra `backend`/`frontend`. Esse gotcha (não documentado antes, só citado de passagem no comentário do próprio `docker-compose.app.yml`) é o motivo principal do arquivo novo. Migrations (15) e seed rodados na sequência sem erro.
+
+`SETUP-NOVA-MAQUINA.md` documenta: pré-requisitos, as três `.env` (nenhuma vem no git — cada pasta tem seu próprio `.gitignore` cobrindo o próprio arquivo, não existe `.env.example` versionado hoje), ordem de subida dos composes, migration/seed, configuração da Evolution API (instância + QR + webhook por instância) e do n8n (import do JSON + credenciais Redis/SMTP/API key + nota sobre `host.docker.internal` vs `http://backend:3000` quando o backend está containerizado na mesma rede), teste ponta a ponta, e uma seção de problemas já vistos antes (`credsStore`, porta 5432 ocupada, `NEXT_PUBLIC_*` exigindo rebuild).
+
+**Não testado como roteiro do zero numa terceira máquina** — escrito com base no que rodou nesta sessão + nas convenções já documentadas no `CLAUDE.md`.
