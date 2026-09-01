@@ -126,13 +126,45 @@ O seed cria: 5 departamentos padrão (RH, Financeiro, Contabilidade, TI, Comerci
 
 1. Acessar `http://localhost:5678`, login com `N8N_USER`/`N8N_PASSWORD`.
 2. Importar `fluxo-completo-com-backend.json` (raiz do repo).
-3. **Reconfigurar credenciais** — não vêm no JSON exportado:
-   - Redis (banco `0`, usado pro debounce de 6s de mensagens fragmentadas)
+3. **Reconfigurar credenciais** — nenhuma credencial vem no JSON exportado (por segurança, o n8n nunca exporta isso):
+   - Redis (banco `0`, usado pro debounce de 6s de mensagens fragmentadas **e** pro dedup do e-mail de alerta do healthcheck)
    - SMTP (usado só pro e-mail de alerta do healthcheck de conexão)
    - Header/API key da Evolution API nos nós HTTP Request — mesmo valor de `EVOLUTION_API_KEY`
 4. Conferir a URL que os nós HTTP Request usam pra chamar o backend — o JSON exportado usa `http://host.docker.internal:3000` (backend rodando nativo, fora do Docker, no ambiente onde foi originalmente montado):
    - Se o backend também estiver containerizado (passo 3 acima), ele já está na mesma rede Docker que o n8n — pode trocar por `http://backend:3000` nos nós, ou manter `host.docker.internal:3000` se o Docker desta máquina resolver esse hostname automaticamente (Docker Desktop resolve; Docker Engine puro no Linux pode exigir `extra_hosts: ["host.docker.internal:host-gateway"]` no serviço `n8n` do `docker-compose.yml`).
 5. Ativar (`Active`) o workflow.
+
+### 6.1 Credencial Redis (debounce de mensagens + dedup do alerta de healthcheck)
+
+O Redis usado aqui é o mesmo container do `docker-compose.yml` (não precisa subir nada novo) — banco `0`, separado do banco `1` que a Evolution API já usa pra cache (`CACHE_REDIS_URI: redis://redis:6379/1`), então não tem conflito de chaves.
+
+1. Na UI do n8n, abrir qualquer nó Redis do workflow (ex: `Redis - Guardar Buffer`) → campo de credencial → **Create New Credential**.
+2. Preencher:
+   - **Host**: `redis` (nome do serviço no `docker-compose.yml` — o n8n resolve via rede Docker interna, não usar `localhost`)
+   - **Port**: `6379`
+   - **Database**: `0`
+   - **User** / **Password**: deixar em branco (o Redis do compose não tem auth configurada)
+3. Salvar a credencial com um nome claro (ex: `Redis Local`) e selecioná-la em **todos** os nós Redis do fluxo — são dois grupos de nós que usam essa credencial:
+   - Debounce de mensagens fragmentadas (ramo "sem conversa ativa"): `buffer:<telefone>` e `latest:<telefone>`, TTL 30s
+   - Dedup do e-mail de alerta do healthcheck: `Redis - Verificar Se Já Alertou`, `Redis - Marcar Alerta Enviado` (chave `alerta_enviado:atendimento-empresa`, TTL 3600s), `Redis - Limpar Alerta (Instância OK)`
+4. Depois de configurar, executar manualmente um nó Redis (`Execute Node` na UI) pra confirmar a conexão antes de ativar o workflow inteiro.
+
+### 6.2 Credencial de e-mail (alerta do healthcheck de conexão)
+
+O healthcheck roda a cada 5min (`GET /instance/connectionState`) e manda um e-mail (não WhatsApp — se a própria instância caiu, não dá pra usá-la pra avisar disso) quando detecta a instância desconectada, com dedup de 1h via Redis (seção acima).
+
+1. No nó `Enviar E-mail de Alerta` → campo de credencial → **Create New Credential** → tipo **SMTP**.
+2. Se usar Gmail como servidor SMTP:
+   - **Host**: `smtp.gmail.com`
+   - **Port**: `465` (SSL) ou `587` (STARTTLS)
+   - **User**: o endereço Gmail completo (precisa ser o mesmo configurado como `fromEmail` no nó — o Gmail rejeita `From` diferente da conta autenticada)
+   - **Password**: **não** é a senha normal da conta — precisa de uma **senha de app** (`myaccount.google.com/apppasswords`), o que exige verificação em duas etapas ativada na conta Google
+3. Depois de criar a credencial, conferir/ajustar no nó `Enviar E-mail de Alerta`:
+   - `fromEmail`: mesmo endereço autenticado na credencial SMTP
+   - `toEmail`: endereço que deve receber o alerta (pode ser o mesmo `fromEmail` — enviar pra si mesmo é aceitável aqui)
+4. Testar com `Execute Node` no próprio node de e-mail antes de confiar no alerta automático — confirma credencial e formatação do HTML de uma vez.
+
+**Nota**: se reconfigurar esse node editando direto na UI (em vez de reimportar o JSON inteiro) pra não perder credenciais já configuradas, lembrar de republicar (`Save`) o workflow depois.
 
 ## 7. Teste ponta a ponta
 
