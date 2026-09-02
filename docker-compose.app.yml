@@ -31,6 +31,11 @@ services:
       EVOLUTION_API_URL: http://evolution-api:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       PORT: 3000
+      # Sem isso o container roda em UTC (não herda o fuso do host) — quebra
+      # BusinessHoursService.estaAberto(), que assume new Date() já em hora
+      # local (mesmo pressuposto do timestamptz, ver CLAUDE.md). Mesmo valor
+      # do GENERIC_TIMEZONE do n8n em docker-compose.yml.
+      TZ: America/Sao_Paulo
     ports:
       # Publicado no host pra: (1) o frontend/browser acessar via localhost:3000,
       # (2) o n8n continuar chamando host.docker.internal:3000 sem nenhuma
