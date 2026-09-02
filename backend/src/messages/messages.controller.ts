@@ -1,15 +1,20 @@
 import {
   Controller,
+  Delete,
   Get,
   Body,
   Param,
+  Patch,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { MessagesService } from './messages.service';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { EditMessageDto } from './dto/edit-message.dto';
+import { DeleteMessageDto } from './dto/delete-message.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('conversations/:conversationId/messages')
@@ -50,5 +55,40 @@ export class MessagesController {
     @Body() dto: CreateMessageDto,
   ) {
     return this.messagesService.create(conversationId, dto);
+  }
+
+  // Só o próprio painel autenticado edita/apaga — e o service ainda checa
+  // que req.user.id é quem mandou a mensagem (ver MessagesService.editar).
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  editar(
+    @Param('conversationId') conversationId: string,
+    @Param('id') id: string,
+    @Body() dto: EditMessageDto,
+    @Req() req: any,
+  ) {
+    return this.messagesService.editar(
+      conversationId,
+      id,
+      req.user.id,
+      dto.mensagem,
+      dto.instance,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  apagar(
+    @Param('conversationId') conversationId: string,
+    @Param('id') id: string,
+    @Body() dto: DeleteMessageDto,
+    @Req() req: any,
+  ) {
+    return this.messagesService.apagar(
+      conversationId,
+      id,
+      req.user.id,
+      dto.instance,
+    );
   }
 }

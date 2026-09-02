@@ -35,6 +35,14 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.emit('nova_mensagem', mensagem);
   }
 
+  emitMensagemEditada(mensagem: unknown) {
+    this.server.emit('mensagem_editada', mensagem);
+  }
+
+  emitMensagemApagada(mensagem: unknown) {
+    this.server.emit('mensagem_apagada', mensagem);
+  }
+
   emitConversaFinalizada(conversa: unknown) {
     this.server.emit('conversa_finalizada', conversa);
   }

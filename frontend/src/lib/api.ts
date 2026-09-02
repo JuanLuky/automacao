@@ -323,6 +323,29 @@ export async function sendMessage(
   return data;
 }
 
+export async function editMessage(
+  conversationId: string,
+  messageId: string,
+  mensagem: string,
+): Promise<Message> {
+  const { data } = await api.patch<Message>(
+    `/conversations/${conversationId}/messages/${messageId}`,
+    { mensagem, instance: EVOLUTION_INSTANCE },
+  );
+  return data;
+}
+
+export async function deleteMessage(
+  conversationId: string,
+  messageId: string,
+): Promise<Message> {
+  const { data } = await api.delete<Message>(
+    `/conversations/${conversationId}/messages/${messageId}`,
+    { data: { instance: EVOLUTION_INSTANCE } },
+  );
+  return data;
+}
+
 // Busca o arquivo de uma mensagem de mídia como blob (via client autenticado,
 // evita expor o token em query string) e devolve uma object URL pronta pra
 // usar em <img>/<audio>/link — quem chama é responsável por revogar

@@ -89,6 +89,23 @@ export class Message {
   @Column({ type: 'text', nullable: true })
   remetente_telefone: string | null;
 
+  // Preenchido quando o próprio atendente edita uma mensagem que ele mandou
+  // (corrigir erro de digitação) — WhatsApp de verdade é atualizado via
+  // Evolution API (/chat/updateMessage), "mensagem" passa a guardar o texto
+  // novo. Só permitido pra origem = atendente, dono da mensagem, tipo texto,
+  // ainda não apagada (ver MessagesService.editar).
+  @Column({ type: 'timestamptz', nullable: true })
+  editado_em: Date | null;
+
+  // Preenchido quando o próprio atendente apaga a mensagem "para todos"
+  // (erro de envio) — WhatsApp de verdade é atualizado via Evolution API
+  // (/chat/deleteMessageForEveryone). "mensagem" mantém o texto original em
+  // banco (auditoria interna); o frontend é quem esconde o conteúdo e
+  // mostra "Mensagem apagada" quando esse campo está preenchido (ver
+  // MessagesService.apagar).
+  @Column({ type: 'timestamptz', nullable: true })
+  apagado_em: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   criado_em: Date;
 }

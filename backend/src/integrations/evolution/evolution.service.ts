@@ -46,6 +46,75 @@ export class EvolutionService {
     return { id: corpo?.key?.id ?? null };
   }
 
+  // Edita uma mensagem já entregue no WhatsApp (só funciona pra mensagem
+  // mandada pelo próprio número, fromMe: true, e dentro da janela de tempo
+  // que o WhatsApp permite editar — quem valida isso é o WhatsApp, não a
+  // Evolution API nem este adapter; erro fora da janela chega como
+  // response.ok = false igual qualquer outra falha). Usado por
+  // MessagesService.editar pra corrigir erro de digitação.
+  async editarMensagem(
+    instance: string,
+    telefone: string,
+    remoteJid: string,
+    messageId: string,
+    novoTexto: string,
+  ): Promise<void> {
+    const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+    const response = await fetch(`${baseUrl}/chat/updateMessage/${instance}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: apiKey ?? '',
+      },
+      body: JSON.stringify({
+        number: telefone,
+        text: novoTexto,
+        key: { remoteJid, fromMe: true, id: messageId },
+      }),
+    });
+
+    if (!response.ok) {
+      const corpo = await response.text();
+      throw new Error(
+        `Falha ao editar mensagem via Evolution API (${response.status}): ${corpo}`,
+      );
+    }
+  }
+
+  // Apaga uma mensagem "para todos" (também some do lado do cliente) — só
+  // funciona pra mensagem mandada pelo próprio número (fromMe: true) e
+  // dentro da janela de tempo que o WhatsApp permite apagar. Usado por
+  // MessagesService.apagar pra corrigir erro de envio.
+  async apagarMensagemParaTodos(
+    instance: string,
+    remoteJid: string,
+    messageId: string,
+  ): Promise<void> {
+    const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+    const response = await fetch(
+      `${baseUrl}/chat/deleteMessageForEveryone/${instance}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: apiKey ?? '',
+        },
+        body: JSON.stringify({ id: messageId, remoteJid, fromMe: true }),
+      },
+    );
+
+    if (!response.ok) {
+      const corpo = await response.text();
+      throw new Error(
+        `Falha ao apagar mensagem via Evolution API (${response.status}): ${corpo}`,
+      );
+    }
+  }
+
   async enviarMidia(
     instance: string,
     telefone: string,

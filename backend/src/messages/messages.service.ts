@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -31,6 +32,39 @@ const MEDIATYPE_EVOLUTION_POR_TIPO: Record<
   [MessageTipo.VIDEO]: "video",
   [MessageTipo.AUDIO]: "audio",
 };
+
+// Extraído pra fora de create() pra ser reaproveitado por editar() — a
+// mensagem editada precisa manter a mesma assinatura "*Nome - SETOR:*" que
+// foi mandada da primeira vez.
+function formatarNome(nome: string): string {
+  const conectivos = ["da", "de", "do", "dos", "das"];
+
+  return nome
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((parte) => !conectivos.includes(parte))
+    .slice(0, 2)
+    .map((parte) => parte.charAt(0).toUpperCase() + parte.slice(1))
+    .join(" ");
+}
+
+function montarAssinatura(remetente: User | null): string | null {
+  if (!remetente) return null;
+  return `*${formatarNome(remetente.nome)}${
+    remetente.departamento ? ` - ${remetente.departamento.nome}:` : ":"
+  }*`;
+}
+
+// remoteJid que a Evolution API exige em Message.key pra editar/apagar: pra
+// cliente é o telefone (sem @s.whatsapp.net em Conversation.telefone) com o
+// sufixo de JID individual; pra grupo, Conversation.telefone já é o JID
+// completo com @g.us (ver Conversation.telefone).
+function construirRemoteJid(conversa: Conversation): string {
+  return conversa.tipo === ConversationTipo.GRUPO
+    ? conversa.telefone
+    : `${conversa.telefone}@s.whatsapp.net`;
+}
 
 type MessageSemSenha = Omit<Message, "atendente"> & {
   atendente?: Omit<User, "senha_hash"> | null;
@@ -218,24 +252,7 @@ export class MessagesService {
       // Assinatura "Nome - SETOR" só no texto enviado ao WhatsApp — o
       // registro em banco (dto.mensagem) fica limpo, já que o frontend
       // mostra o atendente separadamente via mensagem.atendente.
-      const formatarNome = (nome: string): string => {
-        const conectivos = ["da", "de", "do", "dos", "das"];
-
-        return nome
-          .trim()
-          .toLowerCase()
-          .split(/\s+/)
-          .filter((parte) => !conectivos.includes(parte))
-          .slice(0, 2)
-          .map((parte) => parte.charAt(0).toUpperCase() + parte.slice(1))
-          .join(" ");
-      };
-
-      const assinatura = remetente
-        ? `*${formatarNome(remetente.nome)}${
-            remetente.departamento ? ` - ${remetente.departamento.nome}:` : ":"
-          }*`
-        : null;
+      const assinatura = montarAssinatura(remetente);
 
       const textoWhatsapp = assinatura
         ? `${assinatura}\n\n${textoExibicao}`
@@ -297,6 +314,149 @@ export class MessagesService {
       conversa_status: conversa.status,
       conversa_tipo: conversa.tipo,
       conversa_departamento_id: conversa.departamento_id,
+    });
+    return { ...mensagem, atendente: atendenteSemSenha };
+  }
+
+  // Busca a mensagem e garante as regras comuns a editar()/apagar(): só
+  // mensagem de origem = atendente, e só o próprio atendente que mandou
+  // (não vale editar/apagar mensagem de colega, nem mensagem de cliente ou
+  // do sistema/bot). "acao" é só pra mensagem de erro específica.
+  private async buscarMensagemPropria(
+    conversationId: string,
+    messageId: string,
+    atendenteId: string,
+    acao: "editar" | "apagar",
+  ): Promise<Message> {
+    const mensagem = await this.messagesRepository.findOne({
+      where: { id: messageId, conversation_id: conversationId },
+      relations: ["atendente", "atendente.departamento"],
+    });
+    if (!mensagem) {
+      throw new NotFoundException("Mensagem não encontrada.");
+    }
+    if (mensagem.origem !== MessageOrigin.ATENDENTE) {
+      throw new ForbiddenException(
+        "Só é possível editar/apagar mensagens enviadas pelo atendente.",
+      );
+    }
+    if (mensagem.atendente_id !== atendenteId) {
+      throw new ForbiddenException(
+        `Só é possível ${acao} mensagens enviadas por você.`,
+      );
+    }
+    if (mensagem.apagado_em) {
+      throw new BadRequestException("Mensagem já apagada.");
+    }
+    if (!mensagem.evolution_message_id) {
+      // Mensagem antiga (anterior ao dedup por evolution_message_id) ou
+      // caso raro em que o envio original não devolveu id — sem ele não dá
+      // pra identificar a mensagem pra Evolution API editar/apagar no
+      // WhatsApp de verdade.
+      throw new BadRequestException(
+        "Essa mensagem não pode ser editada/apagada no WhatsApp (sem identificador do WhatsApp).",
+      );
+    }
+    return mensagem;
+  }
+
+  // Corrige erro de digitação: edita o texto tanto no WhatsApp do cliente
+  // (Evolution API) quanto no histórico salvo. Só mensagem de texto — a
+  // Evolution API/WhatsApp não editam legenda de mídia.
+  async editar(
+    conversationId: string,
+    messageId: string,
+    atendenteId: string,
+    novoTexto: string,
+    instance: string,
+  ): Promise<MessageSemSenha> {
+    const mensagem = await this.buscarMensagemPropria(
+      conversationId,
+      messageId,
+      atendenteId,
+      "editar",
+    );
+    if (mensagem.tipo !== MessageTipo.TEXTO) {
+      throw new BadRequestException(
+        "Só é possível editar mensagens de texto.",
+      );
+    }
+
+    const conversa = await this.conversationsRepository.findOne({
+      where: { id: conversationId },
+    });
+    if (!conversa) {
+      throw new NotFoundException("Conversa não encontrada.");
+    }
+
+    const assinatura = montarAssinatura(mensagem.atendente ?? null);
+    const textoWhatsapp = assinatura ? `${assinatura}\n\n${novoTexto}` : novoTexto;
+
+    await this.evolutionService.editarMensagem(
+      instance,
+      conversa.telefone,
+      construirRemoteJid(conversa),
+      mensagem.evolution_message_id as string,
+      textoWhatsapp,
+    );
+
+    mensagem.mensagem = novoTexto;
+    mensagem.editado_em = new Date();
+    await this.messagesRepository.update(mensagem.id, {
+      mensagem: novoTexto,
+      editado_em: mensagem.editado_em,
+    });
+
+    const atendenteSemSenha = semSenha(mensagem.atendente ?? null);
+    this.eventsGateway.emitMensagemEditada({
+      id: mensagem.id,
+      conversation_id: conversationId,
+      mensagem: novoTexto,
+      editado_em: mensagem.editado_em,
+    });
+    return { ...mensagem, atendente: atendenteSemSenha };
+  }
+
+  // Corrige erro de envio: apaga a mensagem "para todos" no WhatsApp do
+  // cliente (Evolution API) e marca como apagada no histórico. Mantém o
+  // texto original em banco (auditoria interna) — quem esconde o conteúdo
+  // na tela é o frontend, a partir de apagado_em preenchido.
+  async apagar(
+    conversationId: string,
+    messageId: string,
+    atendenteId: string,
+    instance: string,
+  ): Promise<MessageSemSenha> {
+    const mensagem = await this.buscarMensagemPropria(
+      conversationId,
+      messageId,
+      atendenteId,
+      "apagar",
+    );
+
+    const conversa = await this.conversationsRepository.findOne({
+      where: { id: conversationId },
+    });
+    if (!conversa) {
+      throw new NotFoundException("Conversa não encontrada.");
+    }
+
+    await this.evolutionService.apagarMensagemParaTodos(
+      instance,
+      construirRemoteJid(conversa),
+      mensagem.evolution_message_id as string,
+    );
+
+    mensagem.apagado_em = new Date();
+    await this.messagesRepository.update(mensagem.id, {
+      apagado_em: mensagem.apagado_em,
+    });
+
+    const atendenteSemSenha = semSenha(mensagem.atendente ?? null);
+    this.eventsGateway.emitMensagemApagada({
+      id: mensagem.id,
+      conversation_id: conversationId,
+      apagado_em: mensagem.apagado_em,
     });
     return { ...mensagem, atendente: atendenteSemSenha };
   }

@@ -19,10 +19,12 @@ import {
   Mic,
   MessagesSquare,
   Paperclip,
+  Pencil,
   Phone,
   RotateCcw,
   Send,
   Square,
+  Trash2,
   User as UserIcon,
   X,
 } from "lucide-react";
@@ -42,6 +44,8 @@ import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useWhatsappAvatar } from "@/hooks/useWhatsappAvatar";
 import {
   EVOLUTION_INSTANCE,
+  deleteMessage,
+  editMessage,
   finishConversation,
   getClientTags,
   getConversation,
@@ -171,6 +175,15 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
   const [transferMotivo, setTransferMotivo] = useState("");
   const [enviandoTransfer, setEnviandoTransfer] = useState(false);
 
+  // Editar/apagar mensagem própria (corrigir erro de digitação/envio) — só
+  // uma mensagem por vez em edição, mesmo padrão de modoFinalizar acima
+  // pra identificar qual ação está em andamento.
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [textoEdicao, setTextoEdicao] = useState("");
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+  const [confirmandoApagarId, setConfirmandoApagarId] = useState<string | null>(null);
+  const [apagando, setApagando] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Avatar de quem mandou cada mensagem num grupo (remetente_telefone) —
@@ -273,6 +286,34 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
   useSocketEvent<Conversation>("conversa_finalizada", (finalizada) => {
     if (finalizada.id === id) setConversa(finalizada);
   });
+
+  useSocketEvent<{
+    id: string;
+    conversation_id: string;
+    mensagem: string;
+    editado_em: string;
+  }>("mensagem_editada", (payload) => {
+    if (payload.conversation_id !== id) return;
+    setMensagens((atuais) =>
+      atuais.map((m) =>
+        m.id === payload.id
+          ? { ...m, mensagem: payload.mensagem, editado_em: payload.editado_em }
+          : m,
+      ),
+    );
+  });
+
+  useSocketEvent<{ id: string; conversation_id: string; apagado_em: string }>(
+    "mensagem_apagada",
+    (payload) => {
+      if (payload.conversation_id !== id) return;
+      setMensagens((atuais) =>
+        atuais.map((m) =>
+          m.id === payload.id ? { ...m, apagado_em: payload.apagado_em } : m,
+        ),
+      );
+    },
+  );
 
   async function handleEnviar(event: FormEvent) {
     event.preventDefault();
@@ -464,6 +505,52 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
     } catch (error) {
       setErro(normalizeError(error).message);
       setEnviandoTransfer(false);
+    }
+  }
+
+  function iniciarEdicao(mensagem: Message) {
+    setEditandoId(mensagem.id);
+    setTextoEdicao(mensagem.mensagem);
+    setErro(null);
+  }
+
+  function cancelarEdicao() {
+    setEditandoId(null);
+    setTextoEdicao("");
+  }
+
+  async function salvarEdicao(messageId: string) {
+    const novoTexto = textoEdicao.trim();
+    if (!novoTexto) return;
+
+    setSalvandoEdicao(true);
+    setErro(null);
+    try {
+      const atualizada = await editMessage(id, messageId, novoTexto);
+      setMensagens((atuais) =>
+        atuais.map((m) => (m.id === messageId ? atualizada : m)),
+      );
+      setEditandoId(null);
+    } catch (error) {
+      setErro(normalizeError(error).message);
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  }
+
+  async function handleApagar(messageId: string) {
+    setApagando(true);
+    setErro(null);
+    try {
+      const atualizada = await deleteMessage(id, messageId);
+      setMensagens((atuais) =>
+        atuais.map((m) => (m.id === messageId ? atualizada : m)),
+      );
+      setConfirmandoApagarId(null);
+    } catch (error) {
+      setErro(normalizeError(error).message);
+    } finally {
+      setApagando(false);
     }
   }
 
@@ -685,6 +772,15 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
           const mensagemBot = m.origem === "sistema" && !ehAvisoAdministrativo(m.mensagem);
           const estiloAtendente = m.origem === "atendente" || mensagemBot;
 
+          // Editar/apagar só a própria mensagem do atendente (erro de
+          // digitação/envio) — nunca mensagem de colega, de cliente, do
+          // sistema/bot, ou já apagada. Editar, além disso, só texto puro
+          // (Evolution API/WhatsApp não editam legenda de mídia).
+          const podeGerenciar =
+            m.origem === "atendente" && m.atendente?.id === user?.id && !m.apagado_em;
+          const podeEditar = podeGerenciar && (!m.tipo || m.tipo === "texto");
+          const editandoEstaMensagem = editandoId === m.id;
+
           return m.origem === "sistema" && !mensagemBot ? (
             // rounded-xl (não rounded-full) porque agora também entra o
             // menu de setores reenviado pelo bot — várias linhas, não só
@@ -698,7 +794,7 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
           ) : (
             <div
               key={m.id}
-              className={`flex flex-col ${estiloAtendente ? "items-end" : "items-start"}`}
+              className={`group flex flex-col ${estiloAtendente ? "items-end" : "items-start"}`}
             >
               {mensagemBot && (
                 <span className="mb-1 px-1 text-[0.75rem] font-medium text-muted">
@@ -748,33 +844,104 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
                     </span>
                   </div>
                 )}
-              <div
-                className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[0.875rem] leading-relaxed ${
-                  estiloAtendente
-                    ? "bg-tide-500 text-abyss-900"
-                    : "border border-app bg-raised text-primary"
-                }`}
-              >
-                {m.tipo && m.tipo !== "texto" ? (
-                  <div className="flex flex-col gap-1.5">
-                    <MediaMessage message={m} />
-                    {!LEGENDAS_PADRAO.includes(m.mensagem) && (
-                      <p className="whitespace-pre-wrap">{m.mensagem}</p>
-                    )}
+              {podeGerenciar && !editandoEstaMensagem && (
+                <div className="mb-1 flex items-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  {podeEditar && (
+                    <button
+                      type="button"
+                      onClick={() => iniciarEdicao(m)}
+                      aria-label="Editar mensagem"
+                      className="rounded-md p-1 text-muted transition-colors hover:text-primary"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setConfirmandoApagarId(m.id)}
+                    aria-label="Apagar mensagem para todos"
+                    className="rounded-md p-1 text-muted transition-colors hover:text-alert"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              )}
+
+              {editandoEstaMensagem ? (
+                <div className="w-full max-w-[75%] rounded-2xl border border-tide-500 bg-raised p-2.5">
+                  <textarea
+                    autoFocus
+                    value={textoEdicao}
+                    onChange={(e) => setTextoEdicao(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        salvarEdicao(m.id);
+                      }
+                      if (e.key === "Escape") cancelarEdicao();
+                    }}
+                    rows={2}
+                    className="w-full resize-none bg-transparent text-[0.875rem] leading-relaxed text-primary placeholder:text-muted/60 focus:outline-none"
+                  />
+                  <div className="mt-1.5 flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="!px-2.5 !py-1 text-[0.75rem]"
+                      onClick={cancelarEdicao}
+                      disabled={salvandoEdicao}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      className="!px-2.5 !py-1 text-[0.75rem]"
+                      loading={salvandoEdicao}
+                      disabled={!textoEdicao.trim()}
+                      onClick={() => salvarEdicao(m.id)}
+                    >
+                      Salvar
+                    </Button>
                   </div>
-                ) : (
-                  <p className="whitespace-pre-wrap">{m.mensagem}</p>
-                )}
-                <p
-                  className={`mt-1 text-[0.6875rem] ${
+                </div>
+              ) : (
+                <div
+                  className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[0.875rem] leading-relaxed ${
                     estiloAtendente
-                      ? "text-abyss-900/60"
-                      : "text-muted"
+                      ? "bg-tide-500 text-abyss-900"
+                      : "border border-app bg-raised text-primary"
                   }`}
                 >
-                  {formatTime(m.criado_em)}
-                </p>
-              </div>
+                  {m.apagado_em ? (
+                    <p
+                      className={`italic ${
+                        estiloAtendente ? "text-abyss-900/70" : "text-muted"
+                      }`}
+                    >
+                      Mensagem apagada
+                    </p>
+                  ) : m.tipo && m.tipo !== "texto" ? (
+                    <div className="flex flex-col gap-1.5">
+                      <MediaMessage message={m} />
+                      {!LEGENDAS_PADRAO.includes(m.mensagem) && (
+                        <p className="whitespace-pre-wrap">{m.mensagem}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="whitespace-pre-wrap">{m.mensagem}</p>
+                  )}
+                  <p
+                    className={`mt-1 text-[0.6875rem] ${
+                      estiloAtendente
+                        ? "text-abyss-900/60"
+                        : "text-muted"
+                    }`}
+                  >
+                    {formatTime(m.criado_em)}
+                    {!m.apagado_em && m.editado_em && " · editado"}
+                  </p>
+                </div>
+              )}
             </div>
           );
         })}
@@ -904,6 +1071,17 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
         onConfirm={() => handleFinalizar(true)}
         onSecondary={() => handleFinalizar(false)}
         onCancel={() => setConfirmandoFinalizar(false)}
+      />
+
+      <ConfirmModal
+        open={confirmandoApagarId !== null}
+        title="Apagar esta mensagem para todos?"
+        description="A mensagem some do WhatsApp do cliente também, não só daqui. Essa ação não pode ser desfeita."
+        confirmLabel="Apagar para todos"
+        variant="danger"
+        loading={apagando}
+        onConfirm={() => confirmandoApagarId && handleApagar(confirmandoApagarId)}
+        onCancel={() => setConfirmandoApagarId(null)}
       />
     </div>
   );

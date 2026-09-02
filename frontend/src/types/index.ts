@@ -61,6 +61,12 @@ export interface Message {
   // mensagem. Ver "Grupos do WhatsApp" no CLAUDE.md.
   remetente_nome?: string | null;
   remetente_telefone?: string | null;
+  // Preenchidos quando o próprio atendente edita/apaga uma mensagem que ele
+  // mandou (corrigir erro de digitação/envio) — ver MessagesService no
+  // backend. apagado_em preenchido = conteúdo escondido na tela ("Mensagem
+  // apagada"), mesmo o texto original ainda vindo no campo "mensagem".
+  editado_em?: string | null;
+  apagado_em?: string | null;
 }
 
 export interface Conversation {
