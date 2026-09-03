@@ -81,7 +81,7 @@ const JANELA_APAGAR_MS = HORAS_LIMITE_APAGAR * 60 * 60 * 1000;
 // avisa QUAL mensagem foi editada — melhor sinalizar isso ao atendente do
 // que ficar em silêncio.
 const NOTA_EDICAO_CONTEUDO_DESCONHECIDO =
-  "\n\n✏️ _Mensagem editada pelo cliente — conteúdo novo não disponível, confira direto no WhatsApp._";
+  "\n\n✏️Editada pelo cliente, confira direto no WhatsApp.";
 
 type MessageSemSenha = Omit<Message, "atendente"> & {
   atendente?: Omit<User, "senha_hash"> | null;
