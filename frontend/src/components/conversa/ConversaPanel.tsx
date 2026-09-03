@@ -85,6 +85,13 @@ const MIME_PARA_TIPO: Record<string, MessageTipo> = {
 const TAMANHO_MAXIMO_BYTES = 15 * 1024 * 1024;
 const LEGENDAS_PADRAO = ["[imagem]", "[áudio]", "[documento]", "[vídeo]"];
 
+// Mesmas janelas de tempo do backend (MessagesService) — editar: 15 min;
+// apagar para todos: 60h. Aqui só decide se o botão aparece; quem garante
+// de verdade é o backend (ver mensagem de erro clara quando o prazo já
+// passou mas o botão ainda aparecia, ex: aba aberta há muito tempo).
+const JANELA_EDICAO_MS = 15 * 60 * 1000;
+const JANELA_APAGAR_MS = 60 * 60 * 60 * 1000;
+
 interface AnexoStaged {
   tipo: MessageTipo;
   base64: string;
@@ -183,6 +190,16 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [confirmandoApagarId, setConfirmandoApagarId] = useState<string | null>(null);
   const [apagando, setApagando] = useState(false);
+
+  // Só pra forçar re-render periódico e o botão "Editar" sumir sozinho
+  // quando os 15 minutos passam com a aba aberta e sem nenhuma outra
+  // atualização (nova mensagem, socket etc.) — a checagem em si usa
+  // Date.now() direto no render, esse estado não guarda nada relevante.
+  const [, forcarAtualizacao] = useState(0);
+  useEffect(() => {
+    const intervalo = setInterval(() => forcarAtualizacao((n) => n + 1), 30_000);
+    return () => clearInterval(intervalo);
+  }, []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -775,10 +792,19 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
           // Editar/apagar só a própria mensagem do atendente (erro de
           // digitação/envio) — nunca mensagem de colega, de cliente, do
           // sistema/bot, ou já apagada. Editar, além disso, só texto puro
-          // (Evolution API/WhatsApp não editam legenda de mídia).
-          const podeGerenciar =
+          // (Evolution API/WhatsApp não editam legenda de mídia) e dentro
+          // dos 15 min que o WhatsApp permite; apagar, dentro das 60h que o
+          // WhatsApp permite (mesmas janelas checadas de verdade no
+          // backend — aqui só decide se o botão aparece).
+          const mensagemPropria =
             m.origem === "atendente" && m.atendente?.id === user?.id && !m.apagado_em;
-          const podeEditar = podeGerenciar && (!m.tipo || m.tipo === "texto");
+          const decorridoDesdeEnvio = Date.now() - new Date(m.criado_em).getTime();
+          const podeEditar =
+            mensagemPropria &&
+            (!m.tipo || m.tipo === "texto") &&
+            decorridoDesdeEnvio <= JANELA_EDICAO_MS;
+          const podeApagar = mensagemPropria && decorridoDesdeEnvio <= JANELA_APAGAR_MS;
+          const podeGerenciar = podeEditar || podeApagar;
           const editandoEstaMensagem = editandoId === m.id;
 
           return m.origem === "sistema" && !mensagemBot ? (
@@ -845,7 +871,7 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
                   </div>
                 )}
               {podeGerenciar && !editandoEstaMensagem && (
-                <div className="mb-1 flex items-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="mb-1 flex items-center gap-1 px-1">
                   {podeEditar && (
                     <button
                       type="button"
@@ -856,14 +882,16 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
                       <Pencil size={13} />
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setConfirmandoApagarId(m.id)}
-                    aria-label="Apagar mensagem para todos"
-                    className="rounded-md p-1 text-muted transition-colors hover:text-alert"
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                  {podeApagar && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmandoApagarId(m.id)}
+                      aria-label="Apagar mensagem para todos"
+                      className="rounded-md p-1 text-muted transition-colors hover:text-alert"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
               )}
 

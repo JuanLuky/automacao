@@ -66,6 +66,15 @@ function construirRemoteJid(conversa: Conversation): string {
     : `${conversa.telefone}@s.whatsapp.net`;
 }
 
+// Janelas de tempo que o próprio WhatsApp impõe (não a Evolution API) —
+// editar: 15 minutos após o envio; apagar para todos: 60 horas. Checadas
+// aqui pra bloquear antes de gastar uma chamada à Evolution API e devolver
+// uma mensagem de erro clara, em vez de deixar a Evolution API recusar e
+// estourar um erro genérico.
+const JANELA_EDICAO_MS = 15 * 60 * 1000;
+const HORAS_LIMITE_APAGAR = 60;
+const JANELA_APAGAR_MS = HORAS_LIMITE_APAGAR * 60 * 60 * 1000;
+
 type MessageSemSenha = Omit<Message, "atendente"> & {
   atendente?: Omit<User, "senha_hash"> | null;
 };
@@ -381,6 +390,11 @@ export class MessagesService {
         "Só é possível editar mensagens de texto.",
       );
     }
+    if (Date.now() - mensagem.criado_em.getTime() > JANELA_EDICAO_MS) {
+      throw new BadRequestException(
+        "Essa mensagem foi enviada há mais de 15 minutos — o WhatsApp não permite mais editá-la.",
+      );
+    }
 
     const conversa = await this.conversationsRepository.findOne({
       where: { id: conversationId },
@@ -392,13 +406,23 @@ export class MessagesService {
     const assinatura = montarAssinatura(mensagem.atendente ?? null);
     const textoWhatsapp = assinatura ? `${assinatura}\n\n${novoTexto}` : novoTexto;
 
-    await this.evolutionService.editarMensagem(
-      instance,
-      conversa.telefone,
-      construirRemoteJid(conversa),
-      mensagem.evolution_message_id as string,
-      textoWhatsapp,
-    );
+    try {
+      await this.evolutionService.editarMensagem(
+        instance,
+        conversa.telefone,
+        construirRemoteJid(conversa),
+        mensagem.evolution_message_id as string,
+        textoWhatsapp,
+      );
+    } catch {
+      // Checagem de 15 minutos acima cobre o caso normal — isso aqui é
+      // fallback pra qualquer outro motivo do WhatsApp recusar (ex: relógio
+      // do servidor levemente adiantado em relação ao do WhatsApp, mudança
+      // de regra). Sem isso o erro subiria como 500 genérico pro frontend.
+      throw new BadRequestException(
+        "O WhatsApp recusou a edição dessa mensagem. Pode ser que o prazo de 15 minutos já tenha passado.",
+      );
+    }
 
     mensagem.mensagem = novoTexto;
     mensagem.editado_em = new Date();
@@ -433,6 +457,11 @@ export class MessagesService {
       atendenteId,
       "apagar",
     );
+    if (Date.now() - mensagem.criado_em.getTime() > JANELA_APAGAR_MS) {
+      throw new BadRequestException(
+        `Essa mensagem foi enviada há mais de ${HORAS_LIMITE_APAGAR} horas — o WhatsApp não permite mais apagá-la para todos.`,
+      );
+    }
 
     const conversa = await this.conversationsRepository.findOne({
       where: { id: conversationId },
@@ -441,11 +470,20 @@ export class MessagesService {
       throw new NotFoundException("Conversa não encontrada.");
     }
 
-    await this.evolutionService.apagarMensagemParaTodos(
-      instance,
-      construirRemoteJid(conversa),
-      mensagem.evolution_message_id as string,
-    );
+    try {
+      await this.evolutionService.apagarMensagemParaTodos(
+        instance,
+        construirRemoteJid(conversa),
+        mensagem.evolution_message_id as string,
+      );
+    } catch {
+      // Checagem de 60 horas acima cobre o caso normal — fallback pra
+      // qualquer outro motivo do WhatsApp recusar (ver mesmo comentário em
+      // editar()).
+      throw new BadRequestException(
+        `O WhatsApp recusou apagar essa mensagem. Pode ser que o prazo de ${HORAS_LIMITE_APAGAR} horas já tenha passado.`,
+      );
+    }
 
     mensagem.apagado_em = new Date();
     await this.messagesRepository.update(mensagem.id, {
