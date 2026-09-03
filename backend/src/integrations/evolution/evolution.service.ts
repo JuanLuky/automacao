@@ -63,7 +63,7 @@ export class EvolutionService {
     const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
 
     const response = await fetch(`${baseUrl}/chat/updateMessage/${instance}`, {
-      method: 'PUT',
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         apikey: apiKey ?? '',
