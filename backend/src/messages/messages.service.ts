@@ -75,6 +75,14 @@ const JANELA_EDICAO_MS = 15 * 60 * 1000;
 const HORAS_LIMITE_APAGAR = 60;
 const JANELA_APAGAR_MS = HORAS_LIMITE_APAGAR * 60 * 60 * 1000;
 
+// Nota acrescentada ao texto original quando o cliente edita uma mensagem
+// num chat @lid: o Baileys usado pela Evolution API não decodifica o
+// conteúdo novo nesse caso (ver editarPorEvolutionId), mas o WhatsApp ainda
+// avisa QUAL mensagem foi editada — melhor sinalizar isso ao atendente do
+// que ficar em silêncio.
+const NOTA_EDICAO_CONTEUDO_DESCONHECIDO =
+  "\n\n✏️ _Mensagem editada pelo cliente — conteúdo novo não disponível, confira direto no WhatsApp._";
+
 type MessageSemSenha = Omit<Message, "atendente"> & {
   atendente?: Omit<User, "senha_hash"> | null;
 };
@@ -512,9 +520,16 @@ export class MessagesService {
   // não tem noção de "dono" — casa só por evolution_message_id, porque o
   // n8n não tem conversationId/atendenteId nesse ponto do fluxo. Público
   // (sem guard), mesmo padrão das outras rotas que o n8n chama.
+  //
+  // novoTexto ausente = o n8n sabe QUAL mensagem foi editada (chat @lid,
+  // via secretEncryptedMessage) mas não o texto novo — nesse caso só
+  // acrescenta NOTA_EDICAO_CONTEUDO_DESCONHECIDO ao texto original em vez
+  // de substituir (nunca joga fora conteúdo real por um texto que a gente
+  // não sabe se é verdade). Idempotente nesse ramo (reentrega do mesmo
+  // evento pelo webhook não duplica a nota).
   async editarPorEvolutionId(
     evolutionMessageId: string,
-    novoTexto: string,
+    novoTexto?: string,
   ): Promise<MessageSemSenha> {
     const mensagem = await this.messagesRepository.findOne({
       where: { evolution_message_id: evolutionMessageId },
@@ -526,10 +541,19 @@ export class MessagesService {
       );
     }
 
-    mensagem.mensagem = novoTexto;
+    let textoFinal = novoTexto;
+    if (textoFinal === undefined) {
+      const atendenteSemSenha = semSenha(mensagem.atendente ?? null);
+      if (mensagem.editado_em) {
+        return { ...mensagem, atendente: atendenteSemSenha };
+      }
+      textoFinal = `${mensagem.mensagem}${NOTA_EDICAO_CONTEUDO_DESCONHECIDO}`;
+    }
+
+    mensagem.mensagem = textoFinal;
     mensagem.editado_em = new Date();
     await this.messagesRepository.update(mensagem.id, {
-      mensagem: novoTexto,
+      mensagem: textoFinal,
       editado_em: mensagem.editado_em,
     });
 
@@ -537,7 +561,7 @@ export class MessagesService {
     this.eventsGateway.emitMensagemEditada({
       id: mensagem.id,
       conversation_id: mensagem.conversation_id,
-      mensagem: novoTexto,
+      mensagem: textoFinal,
       editado_em: mensagem.editado_em,
     });
     return { ...mensagem, atendente: atendenteSemSenha };

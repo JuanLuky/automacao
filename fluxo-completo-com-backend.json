@@ -714,7 +714,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.item.json.body ?? $input.item.json;\nconst event = body.event;\nconst data = body.data;\n\nif (event !== 'messages.edited') {\n  return [];\n}\n\n// data = protocolMessage: { key: { id, remoteJid, fromMe, participant? },\n// editedMessage: { conversation | extendedTextMessage: { text } } }. Só\n// interessa edição feita pelo próprio cliente (fromMe: false) — edição do\n// atendente pelo painel já é tratada por MessagesService.editar, chamada\n// direto pelo painel, não pelo webhook.\nif (!data || !data.key || data.key.fromMe) {\n  return [];\n}\n\nconst editedMessage = data.editedMessage || {};\nconst novoTexto = editedMessage.conversation ?? editedMessage.extendedTextMessage?.text ?? null;\n\n// Sem texto reconhecido (ex: edição de um tipo de conteúdo que a Evolution\n// API não devolve como texto) — nada a registrar.\nif (novoTexto === null) {\n  return [];\n}\n\nreturn [\n  {\n    json: {\n      evolution_message_id: data.key.id,\n      mensagem: novoTexto,\n    },\n  },\n];\n"
+        "jsCode": "const body = $input.item.json.body ?? $input.item.json;\nconst event = body.event;\nconst data = body.data;\n\n// Caso 1: edição \"normal\" — Baileys decodifica o protocolMessage e a\n// Evolution API dispara esse evento dedicado com o texto novo de verdade.\n// data = protocolMessage: { key: { id, remoteJid, fromMe, participant? },\n// editedMessage: { conversation | extendedTextMessage: { text } } }. Só\n// interessa edição feita pelo próprio cliente (fromMe: false) — edição do\n// atendente pelo painel já é tratada por MessagesService.editar, chamada\n// direto pelo painel, não pelo webhook.\nif (event === 'messages.edited') {\n  if (!data || !data.key || data.key.fromMe) {\n    return [];\n  }\n\n  const editedMessage = data.editedMessage || {};\n  const novoTexto = editedMessage.conversation ?? editedMessage.extendedTextMessage?.text ?? null;\n\n  // Sem texto reconhecido (ex: edição de um tipo de conteúdo que a\n  // Evolution API não devolve como texto) — nada a registrar.\n  if (novoTexto === null) {\n    return [];\n  }\n\n  return [{ json: { evolution_message_id: data.key.id, mensagem: novoTexto } }];\n}\n\n// Caso 2: edição entregue via secretEncryptedMessage (chat @lid) — o\n// Baileys usado pela Evolution API não decodifica esse campo (ver\n// PROGRESSO.md), então não existe \"messages.edited\" pra essa edição, só um\n// \"messages.upsert\" cujo targetMessageKey.id aponta pra mensagem original.\n// Sem o texto novo, MessagesService.editarPorEvolutionId só acrescenta um\n// aviso ao texto original (mensagem omitida do payload de propósito).\nif (event === 'messages.upsert' && data?.message?.secretEncryptedMessage && !data.key?.fromMe) {\n  const targetId = data.message.secretEncryptedMessage.targetMessageKey?.id;\n  if (!targetId) {\n    return [];\n  }\n  return [{ json: { evolution_message_id: targetId } }];\n}\n\nreturn [];\n"
       },
       "name": "Extrair Edição de Mensagem",
       "type": "n8n-nodes-base.code",
@@ -734,7 +734,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"mensagem\": $json.mensagem } }}",
+        "jsonBody": "={{ $json.mensagem !== undefined ? { \"mensagem\": $json.mensagem } : {} }}",
         "options": {}
       },
       "name": "Registrar Edição no Backend",
