@@ -5,6 +5,7 @@ import { Conversation } from '../conversations/entities/conversation.entity';
 import { User } from '../users/entities/user.entity';
 import { MessagesService } from './messages.service';
 import { MessagesController } from './messages.controller';
+import { MessagesEvolutionController } from './messages-evolution.controller';
 import { WebsocketModule } from '../websocket/websocket.module';
 import { EvolutionModule } from '../integrations/evolution/evolution.module';
 import { MediaStorageService } from './media-storage.service';
@@ -15,7 +16,7 @@ import { MediaStorageService } from './media-storage.service';
     WebsocketModule,
     EvolutionModule,
   ],
-  controllers: [MessagesController],
+  controllers: [MessagesController, MessagesEvolutionController],
   providers: [MessagesService, MediaStorageService],
 })
 export class MessagesModule {}

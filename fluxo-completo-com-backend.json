@@ -40,7 +40,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\nconst conversa = $input.item.json;\n\n// eh_from_me = mensagem mandada direto do celular conectado, fora do\n// painel — registra como origem \"atendente\", origem_externa: true (o\n// backend só guarda no histórico, não reenvia ao WhatsApp nem exige\n// atendente/instance — ver MessagesService.create). Senão é mensagem\n// normal de cliente/participante do grupo.\nconst json = {\n  conversation_id: conversa.id,\n  mensagem: original.texto,\n  origem: original.eh_from_me ? 'atendente' : 'cliente',\n};\n\nif (original.eh_from_me) {\n  json.origem_externa = true;\n  json.evolution_message_id = original.wa_message_id;\n} else if (original.eh_grupo) {\n  // Quem escreveu dentro do grupo (ver \"Grupos do WhatsApp\" no CLAUDE.md)\n  // — não existe pra conversa 1:1, onde o remetente já é a própria conversa.\n  json.remetente_nome = original.remetente_nome;\n  json.remetente_telefone = original.remetente_telefone;\n}\n\nreturn [{ json }];\n"
+        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\nconst conversa = $input.item.json;\n\n// eh_from_me = mensagem mandada direto do celular conectado, fora do\n// painel — registra como origem \"atendente\", origem_externa: true (o\n// backend só guarda no histórico, não reenvia ao WhatsApp nem exige\n// atendente/instance — ver MessagesService.create). Senão é mensagem\n// normal de cliente/participante do grupo. evolution_message_id sempre\n// vai junto (também pra mensagem de cliente) — é o que permite casar um\n// evento futuro de edição/apagamento do WhatsApp (ver \"Extrair Edição de\n// Mensagem\"/\"Extrair Apagamento de Mensagem\") com essa mensagem.\nconst json = {\n  conversation_id: conversa.id,\n  mensagem: original.texto,\n  origem: original.eh_from_me ? 'atendente' : 'cliente',\n  evolution_message_id: original.wa_message_id,\n};\n\nif (original.eh_from_me) {\n  json.origem_externa = true;\n} else if (original.eh_grupo) {\n  // Quem escreveu dentro do grupo (ver \"Grupos do WhatsApp\" no CLAUDE.md)\n  // — não existe pra conversa 1:1, onde o remetente já é a própria conversa.\n  json.remetente_nome = original.remetente_nome;\n  json.remetente_telefone = original.remetente_telefone;\n}\n\nreturn [{ json }];\n"
       },
       "name": "Preparar Mensagem do Cliente",
       "type": "n8n-nodes-base.code",
@@ -93,7 +93,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\nconst conversa = $('Definir Conversa Atual').item.json;\nconst resultado = $json; // resposta de \"Buscar Mídia\": mediaType, fileName, size, mimetype, base64\n\n// Mesmo critério de \"Preparar Mensagem do Cliente\" — ver comentário lá.\nconst json = {\n  conversation_id: conversa.id,\n  mensagem: original.texto,\n  tipo: original.tipo,\n  midia_base64: resultado.base64,\n  midia_mimetype: resultado.mimetype,\n  midia_nome_arquivo: resultado.fileName || null,\n  origem: original.eh_from_me ? 'atendente' : 'cliente',\n};\n\nif (original.eh_from_me) {\n  json.origem_externa = true;\n  json.evolution_message_id = original.wa_message_id;\n} else if (original.eh_grupo) {\n  json.remetente_nome = original.remetente_nome;\n  json.remetente_telefone = original.remetente_telefone;\n}\n\nreturn [{ json }];\n"
+        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\nconst conversa = $('Definir Conversa Atual').item.json;\nconst resultado = $json; // resposta de \"Buscar Mídia\": mediaType, fileName, size, mimetype, base64\n\n// Mesmo critério de \"Preparar Mensagem do Cliente\" — ver comentário lá,\n// evolution_message_id incluso pro mesmo motivo (casar apagamento futuro\n// de uma mensagem de mídia mandada pelo cliente).\nconst json = {\n  conversation_id: conversa.id,\n  mensagem: original.texto,\n  tipo: original.tipo,\n  midia_base64: resultado.base64,\n  midia_mimetype: resultado.mimetype,\n  midia_nome_arquivo: resultado.fileName || null,\n  origem: original.eh_from_me ? 'atendente' : 'cliente',\n  evolution_message_id: original.wa_message_id,\n};\n\nif (original.eh_from_me) {\n  json.origem_externa = true;\n} else if (original.eh_grupo) {\n  json.remetente_nome = original.remetente_nome;\n  json.remetente_telefone = original.remetente_telefone;\n}\n\nreturn [{ json }];\n"
       },
       "name": "Montar Mensagem de Mídia",
       "type": "n8n-nodes-base.code",
@@ -711,11 +711,78 @@
       "typeVersion": 1,
       "position": [1720, 720],
       "id": "node-healthcheck-redis-set-alert"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body ?? $input.item.json;\nconst event = body.event;\nconst data = body.data;\n\nif (event !== 'messages.edited') {\n  return [];\n}\n\n// data = protocolMessage: { key: { id, remoteJid, fromMe, participant? },\n// editedMessage: { conversation | extendedTextMessage: { text } } }. Só\n// interessa edição feita pelo próprio cliente (fromMe: false) — edição do\n// atendente pelo painel já é tratada por MessagesService.editar, chamada\n// direto pelo painel, não pelo webhook.\nif (!data || !data.key || data.key.fromMe) {\n  return [];\n}\n\nconst editedMessage = data.editedMessage || {};\nconst novoTexto = editedMessage.conversation ?? editedMessage.extendedTextMessage?.text ?? null;\n\n// Sem texto reconhecido (ex: edição de um tipo de conteúdo que a Evolution\n// API não devolve como texto) — nada a registrar.\nif (novoTexto === null) {\n  return [];\n}\n\nreturn [\n  {\n    json: {\n      evolution_message_id: data.key.id,\n      mensagem: novoTexto,\n    },\n  },\n];\n"
+      },
+      "name": "Extrair Edição de Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 1200],
+      "id": "node-extract-edit"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ \"http://host.docker.internal:3000/messages/evolution/\" + encodeURIComponent($json.evolution_message_id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"mensagem\": $json.mensagem } }}",
+        "options": {}
+      },
+      "name": "Registrar Edição no Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [620, 1200],
+      "id": "node-register-edit"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body ?? $input.item.json;\nconst event = body.event;\nconst data = body.data;\n\nif (event !== 'messages.delete') {\n  return [];\n}\n\n// Duas formas possíveis de payload pra esse evento, dependendo de onde a\n// Evolution API disparou: a chave da mensagem apagada vem em\n// data.key.{id,fromMe} ou direto em data.{id,fromMe}.\nconst key = data?.key || data;\nif (!key || !key.id) {\n  return [];\n}\n\n// Só apagamento feito pelo próprio cliente (fromMe: false) — apagar pelo\n// painel já é tratado por MessagesService.apagar, chamado direto pelo\n// painel, não pelo webhook.\nif (key.fromMe) {\n  return [];\n}\n\nreturn [\n  {\n    json: {\n      evolution_message_id: key.id,\n    },\n  },\n];\n"
+      },
+      "name": "Extrair Apagamento de Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 1340],
+      "id": "node-extract-delete"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ \"http://host.docker.internal:3000/messages/evolution/\" + encodeURIComponent($json.evolution_message_id) }}",
+        "options": {}
+      },
+      "name": "Registrar Apagamento no Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [620, 1340],
+      "id": "node-register-delete"
     }
   ],
   "connections": {
     "Webhook - Evolution API": {
-      "main": [[{ "node": "Extrair Dados da Mensagem", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          { "node": "Extrair Dados da Mensagem", "type": "main", "index": 0 },
+          { "node": "Extrair Edição de Mensagem", "type": "main", "index": 0 },
+          { "node": "Extrair Apagamento de Mensagem", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Extrair Edição de Mensagem": {
+      "main": [[{ "node": "Registrar Edição no Backend", "type": "main", "index": 0 }]]
+    },
+    "Extrair Apagamento de Mensagem": {
+      "main": [[{ "node": "Registrar Apagamento no Backend", "type": "main", "index": 0 }]]
     },
     "Extrair Dados da Mensagem": {
       "main": [[{ "node": "Verificar Conversa Ativa", "type": "main", "index": 0 }]]

@@ -230,12 +230,15 @@ export class MessagesService {
         midia_mimetype: midiaPath ? dto.midia_mimetype ?? null : null,
         midia_nome_arquivo: midiaPath ? dto.midia_nome_arquivo ?? null : null,
         atendente_id: remetente ? remetente.id : null,
-        // origem_externa já vem com o id da mensagem no WhatsApp (o n8n tira
-        // do próprio webhook); mensagem enviada pelo painel só ganha o dela
-        // depois, a partir do retorno da Evolution API (ver bloco abaixo).
-        evolution_message_id: dto.origem_externa
-          ? dto.evolution_message_id ?? null
-          : null,
+        // origem_externa e cliente já vêm com o id da mensagem no WhatsApp
+        // (o n8n tira do próprio webhook, ver "Preparar Mensagem do
+        // Cliente"/"Montar Mensagem de Mídia") — precisa ficar salvo pra
+        // editarPorEvolutionId/apagarPorEvolutionId conseguirem casar um
+        // evento de edição/apagamento do cliente com essa mensagem depois.
+        // Mensagem enviada pelo painel só ganha o dela depois, a partir do
+        // retorno da Evolution API (ver bloco abaixo) — dto.evolution_message_id
+        // vem undefined nesse caso.
+        evolution_message_id: dto.evolution_message_id ?? null,
         remetente_nome: dto.remetente_nome ?? null,
         remetente_telefone: dto.remetente_telefone ?? null,
       }),
@@ -494,6 +497,79 @@ export class MessagesService {
     this.eventsGateway.emitMensagemApagada({
       id: mensagem.id,
       conversation_id: conversationId,
+      apagado_em: mensagem.apagado_em,
+    });
+    return { ...mensagem, atendente: atendenteSemSenha };
+  }
+
+  // Espelha no histórico uma edição/apagamento que já aconteceu de verdade
+  // no WhatsApp por fora do painel — o cliente editando/apagando a própria
+  // mensagem (ou o atendente fazendo isso direto do celular, sem passar
+  // pelo painel). Chamado pelo n8n a partir dos eventos "messages.edited"/
+  // "messages.delete" do webhook da Evolution API (ver
+  // fluxo-completo-com-backend.json). Ao contrário de editar()/apagar(),
+  // nunca chama a Evolution API de volta (a ação já é fato consumado) e
+  // não tem noção de "dono" — casa só por evolution_message_id, porque o
+  // n8n não tem conversationId/atendenteId nesse ponto do fluxo. Público
+  // (sem guard), mesmo padrão das outras rotas que o n8n chama.
+  async editarPorEvolutionId(
+    evolutionMessageId: string,
+    novoTexto: string,
+  ): Promise<MessageSemSenha> {
+    const mensagem = await this.messagesRepository.findOne({
+      where: { evolution_message_id: evolutionMessageId },
+      relations: ["atendente", "atendente.departamento"],
+    });
+    if (!mensagem) {
+      throw new NotFoundException(
+        "Nenhuma mensagem encontrada para esse evolution_message_id.",
+      );
+    }
+
+    mensagem.mensagem = novoTexto;
+    mensagem.editado_em = new Date();
+    await this.messagesRepository.update(mensagem.id, {
+      mensagem: novoTexto,
+      editado_em: mensagem.editado_em,
+    });
+
+    const atendenteSemSenha = semSenha(mensagem.atendente ?? null);
+    this.eventsGateway.emitMensagemEditada({
+      id: mensagem.id,
+      conversation_id: mensagem.conversation_id,
+      mensagem: novoTexto,
+      editado_em: mensagem.editado_em,
+    });
+    return { ...mensagem, atendente: atendenteSemSenha };
+  }
+
+  async apagarPorEvolutionId(
+    evolutionMessageId: string,
+  ): Promise<MessageSemSenha> {
+    const mensagem = await this.messagesRepository.findOne({
+      where: { evolution_message_id: evolutionMessageId },
+      relations: ["atendente", "atendente.departamento"],
+    });
+    if (!mensagem) {
+      throw new NotFoundException(
+        "Nenhuma mensagem encontrada para esse evolution_message_id.",
+      );
+    }
+    const atendenteSemSenha = semSenha(mensagem.atendente ?? null);
+    if (mensagem.apagado_em) {
+      // Já apagada — reentrega do mesmo evento pelo n8n (webhook não tem
+      // garantia de entrega única). Idempotente, não reemite o evento.
+      return { ...mensagem, atendente: atendenteSemSenha };
+    }
+
+    mensagem.apagado_em = new Date();
+    await this.messagesRepository.update(mensagem.id, {
+      apagado_em: mensagem.apagado_em,
+    });
+
+    this.eventsGateway.emitMensagemApagada({
+      id: mensagem.id,
+      conversation_id: mensagem.conversation_id,
       apagado_em: mensagem.apagado_em,
     });
     return { ...mensagem, atendente: atendenteSemSenha };
