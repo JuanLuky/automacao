@@ -547,7 +547,7 @@ export class MessagesService {
       if (mensagem.editado_em) {
         return { ...mensagem, atendente: atendenteSemSenha };
       }
-      textoFinal = `${mensagem.mensagem}${NOTA_EDICAO_CONTEUDO_DESCONHECIDO}`;
+      textoFinal = `${mensagem.mensagem}`;
     }
 
     mensagem.mensagem = textoFinal;
