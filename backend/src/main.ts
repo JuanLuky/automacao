@@ -7,7 +7,13 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  app.enableCors({ origin: '*' });
+  // Origens permitidas do painel (frontend) — CORS_ORIGIN aceita uma ou
+  // várias, separadas por vírgula. Sem essa env, cai no dev local padrão
+  // (frontend em :3001) em vez de abrir pra qualquer origem.
+  const corsOrigin = process.env.CORS_ORIGIN;
+  app.enableCors({
+    origin: corsOrigin ? corsOrigin.split(',').map((o) => o.trim()) : 'http://localhost:3001',
+  });
 
   // Padrão do Express é 100kb — pequeno demais pra mensagens com mídia em
   // base64 (imagem/documento até 15MB decodificado, ver MediaStorageService,

@@ -17,6 +17,7 @@ import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { ConversationStatus } from './enums/conversation-status.enum';
 import { ConversationTipo } from './enums/conversation-tipo.enum';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { N8nOrJwtAuthGuard } from '../auth/guards/n8n-or-jwt-auth.guard';
 
 @Controller('conversations')
 export class ConversationsController {
@@ -88,14 +89,16 @@ export class ConversationsController {
   }
 
   // Rota usada pelo n8n para checar se já existe conversa em aberto.
-  // Sem autenticação de atendente de propósito — quem protege esse endpoint
-  // é a rede interna do Docker (n8n só é alcançável de dentro da rede).
+  // Sem login de atendente de propósito (o n8n não tem usuário) — protegida
+  // por N8nOrJwtAuthGuard (header "x-n8n-api-key"), não mais só pela rede
+  // interna do Docker.
   //
   // "texto" e "nome" são opcionais: o n8n manda o texto da mensagem e o
   // pushName do WhatsApp que disparou essa checagem (query params, não
   // corpo — GET) pra alimentar o histórico da aba Bot quando não existe
   // conversa (ver
   // ConversationsService.findConversaAtivaPorTelefone/BotSessionsService).
+  @UseGuards(N8nOrJwtAuthGuard)
   @Get('by-phone/:telefone')
   findByPhone(
     @Param('telefone') telefone: string,
@@ -106,6 +109,7 @@ export class ConversationsController {
   }
 
   // Rota usada pelo n8n para criar o atendimento quando o cliente escolhe o setor.
+  @UseGuards(N8nOrJwtAuthGuard)
   @Post()
   create(@Body() dto: CreateConversationDto) {
     return this.conversationsService.create(dto);

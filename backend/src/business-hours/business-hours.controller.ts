@@ -2,6 +2,7 @@ import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import { BusinessHoursService } from './business-hours.service';
 import { UpdateBusinessHoursDto } from './dto/update-business-hours.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { N8nOrJwtAuthGuard } from '../auth/guards/n8n-or-jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
@@ -10,7 +11,8 @@ import { UserRole } from '../users/entities/user.entity';
 export class BusinessHoursController {
   constructor(private readonly businessHoursService: BusinessHoursService) {}
 
-  // Público de propósito: o n8n consulta sem autenticação, mesmo padrão de GET /departments.
+  // O n8n consulta sem login de atendente, mesmo padrão de GET /departments — ver N8nOrJwtAuthGuard.
+  @UseGuards(N8nOrJwtAuthGuard)
   @Get()
   getPublico() {
     return this.businessHoursService.getPublico();

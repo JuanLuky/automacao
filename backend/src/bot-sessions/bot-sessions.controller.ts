@@ -2,10 +2,11 @@ import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/c
 import { BotSessionsService } from './bot-sessions.service';
 import { RegistrarMensagemBotDto } from './dto/registrar-mensagem-bot.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { N8nOrJwtAuthGuard } from '../auth/guards/n8n-or-jwt-auth.guard';
 
 // Leitura e descarte são só do painel (autenticado); "mensagem-enviada" é
-// pública de propósito — quem chama é o n8n, sem token, mesmo padrão de
-// ConversationsController.findByPhone (ver lá o porquê).
+// chamada pelo n8n sem token de atendente, protegida por N8nOrJwtAuthGuard
+// (header "x-n8n-api-key") — mesmo padrão de ConversationsController.findByPhone.
 @Controller('bot-sessions')
 export class BotSessionsController {
   constructor(private readonly botSessionsService: BotSessionsService) {}
@@ -28,6 +29,7 @@ export class BotSessionsController {
   // texto junto do histórico da sessão (ver BotSessionsService.
   // registrarMensagemBot) pro atendente ver a pergunta do bot, não só a
   // resposta da pessoa.
+  @UseGuards(N8nOrJwtAuthGuard)
   @Post(':telefone/mensagem-enviada')
   registrarMensagemEnviada(
     @Param('telefone') telefone: string,

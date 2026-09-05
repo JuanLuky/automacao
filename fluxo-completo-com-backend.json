@@ -29,6 +29,12 @@
       "parameters": {
         "method": "GET",
         "url": "={{ \"http://host.docker.internal:3000/conversations/by-phone/\" + $json.telefone + \"?texto=\" + encodeURIComponent($json.texto || '') + \"&nome=\" + encodeURIComponent($json.nome || '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
+          ]
+        },
         "options": {}
       },
       "name": "Verificar Conversa Ativa",
@@ -107,7 +113,10 @@
         "url": "={{ \"http://host.docker.internal:3000/conversations/\" + $json.conversation_id + \"/messages\" }}",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
@@ -181,7 +190,10 @@
         "url": "http://host.docker.internal:3000/conversations",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
@@ -339,6 +351,12 @@
       "parameters": {
         "method": "GET",
         "url": "http://host.docker.internal:3000/business-hours",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
+          ]
+        },
         "options": {}
       },
       "name": "Consultar Horário de Funcionamento",
@@ -399,6 +417,12 @@
       "parameters": {
         "method": "GET",
         "url": "http://host.docker.internal:3000/departments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
+          ]
+        },
         "options": {}
       },
       "name": "Buscar Departamentos",
@@ -449,7 +473,10 @@
         "url": "http://host.docker.internal:3000/conversations",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
@@ -500,7 +527,8 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
           ]
         },
         "sendBody": true,
@@ -552,7 +580,8 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
           ]
         },
         "sendBody": true,
@@ -729,7 +758,8 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
           ]
         },
         "sendBody": true,
@@ -758,6 +788,12 @@
       "parameters": {
         "method": "DELETE",
         "url": "={{ \"http://host.docker.internal:3000/messages/evolution/\" + encodeURIComponent($json.evolution_message_id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
+          ]
+        },
         "options": {}
       },
       "name": "Registrar Apagamento no Backend",

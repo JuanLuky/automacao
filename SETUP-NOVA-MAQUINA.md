@@ -37,6 +37,8 @@ PGADMIN_PASSWORD=
 # Backend (usado pelo docker-compose.app.yml)
 JWT_SECRET=                   # gerar com: openssl rand -hex 32
 JWT_EXPIRES_IN=7d
+N8N_API_KEY=                  # gerar uma chave forte — precisa ser IDÊNTICA em backend/.env e no header "x-n8n-api-key" dos nós HTTP do n8n
+CORS_ORIGIN=http://localhost:3001   # origem do painel liberada no CORS do backend
 
 # Frontend (build args — embutidos no bundle em build-time, exigem rebuild se mudar)
 NEXT_PUBLIC_API_URL=http://localhost:3000
@@ -55,6 +57,9 @@ JWT_EXPIRES_IN=7d
 
 EVOLUTION_API_URL=http://localhost:8089
 EVOLUTION_API_KEY=            # idêntica ao .env da raiz
+
+N8N_API_KEY=                  # idêntica ao .env da raiz
+CORS_ORIGIN=http://localhost:3001
 
 PORT=3000
 ```
@@ -130,6 +135,7 @@ O seed cria: 5 departamentos padrão (RH, Financeiro, Contabilidade, TI, Comerci
    - Redis (banco `0`, usado pro debounce de 6s de mensagens fragmentadas **e** pro dedup do e-mail de alerta do healthcheck)
    - SMTP (usado só pro e-mail de alerta do healthcheck de conexão)
    - Header/API key da Evolution API nos nós HTTP Request — mesmo valor de `EVOLUTION_API_KEY`
+   - Header `x-n8n-api-key` nos nós HTTP Request que chamam o backend (o JSON exportado traz o placeholder `COLOQUE_AQUI_A_N8N_API_KEY`) — mesmo valor de `N8N_API_KEY`. Sem isso, essas chamadas do n8n voltam `401 Unauthorized` (ver `N8nOrJwtAuthGuard` no `CLAUDE.md`)
 4. Conferir a URL que os nós HTTP Request usam pra chamar o backend — o JSON exportado usa `http://host.docker.internal:3000` (backend rodando nativo, fora do Docker, no ambiente onde foi originalmente montado):
    - Se o backend também estiver containerizado (passo 3 acima), ele já está na mesma rede Docker que o n8n — pode trocar por `http://backend:3000` nos nós, ou manter `host.docker.internal:3000` se o Docker desta máquina resolver esse hostname automaticamente (Docker Desktop resolve; Docker Engine puro no Linux pode exigir `extra_hosts: ["host.docker.internal:host-gateway"]` no serviço `n8n` do `docker-compose.yml`).
 5. Ativar (`Active`) o workflow.

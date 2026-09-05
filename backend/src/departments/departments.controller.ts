@@ -3,6 +3,7 @@ import { DepartmentsService } from './departments.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { N8nOrJwtAuthGuard } from '../auth/guards/n8n-or-jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
@@ -11,8 +12,10 @@ import { UserRole } from '../users/entities/user.entity';
 export class DepartmentsController {
   constructor(private readonly departmentsService: DepartmentsService) {}
 
-  // Lista pública propositalmente: o n8n também pode precisar consultar
-  // os setores disponíveis sem autenticação de atendente. Só ativos.
+  // O n8n consulta os setores disponíveis sem login de atendente (header
+  // "x-n8n-api-key"); o painel chama a mesma rota autenticado com JWT — ver
+  // N8nOrJwtAuthGuard. Só ativos.
+  @UseGuards(N8nOrJwtAuthGuard)
   @Get()
   findAll() {
     return this.departmentsService.findAll();

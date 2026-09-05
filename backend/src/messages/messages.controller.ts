@@ -16,6 +16,7 @@ import { CreateMessageDto } from './dto/create-message.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
 import { DeleteMessageDto } from './dto/delete-message.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { N8nOrJwtAuthGuard } from '../auth/guards/n8n-or-jwt-auth.guard';
 
 @Controller('conversations/:conversationId/messages')
 export class MessagesController {
@@ -44,11 +45,11 @@ export class MessagesController {
     res.send(buffer);
   }
 
-  // Sem guard: essa rota também é chamada pelo n8n quando o cliente manda
-  // uma mensagem para uma conversa já existente (origem: cliente).
-  // O painel usa a mesma rota (origem: atendente) autenticado via token,
-  // mas como a validação de origem já limita o que pode ser feito,
-  // manter aberta simplifica a chamada vinda do n8n.
+  // N8nOrJwtAuthGuard: essa rota também é chamada pelo n8n quando o cliente
+  // manda uma mensagem para uma conversa já existente (origem: cliente),
+  // sem token de atendente — usa o header "x-n8n-api-key" nesse caso. O
+  // painel usa a mesma rota (origem: atendente) com o JWT normal.
+  @UseGuards(N8nOrJwtAuthGuard)
   @Post()
   create(
     @Param('conversationId') conversationId: string,

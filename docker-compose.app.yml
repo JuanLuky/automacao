@@ -30,6 +30,8 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
       EVOLUTION_API_URL: http://evolution-api:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      N8N_API_KEY: ${N8N_API_KEY}
+      CORS_ORIGIN: ${CORS_ORIGIN}
       PORT: 3000
       # Sem isso o container roda em UTC (não herda o fuso do host) — quebra
       # BusinessHoursService.estaAberto(), que assume new Date() já em hora
