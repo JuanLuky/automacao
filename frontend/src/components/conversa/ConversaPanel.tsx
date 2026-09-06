@@ -772,7 +772,7 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
 
       <div
         ref={scrollRef}
-        className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-app bg-surface p-4"
+        className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-app bg-sunken p-4"
       >
         {mensagens.length === 0 && (
           <p className="py-8 text-center text-[0.875rem] text-muted">
@@ -813,7 +813,7 @@ export function ConversaPanel({ conversationId, onSair }: ConversaPanelProps) {
             // avisos curtos como "Conversa transferida." — em pílula
             // ficaria uma oval esticada e ilegível.
             <div key={m.id} className="flex justify-center">
-              <span className="max-w-[85%] whitespace-pre-wrap rounded-xl bg-sunken px-3.5 py-2 text-center text-[0.75rem] leading-relaxed text-muted">
+              <span className="max-w-[85%] whitespace-pre-wrap rounded-xl bg-raised px-3.5 py-2 text-center text-[0.75rem] leading-relaxed text-muted">
                 {m.mensagem}
               </span>
             </div>

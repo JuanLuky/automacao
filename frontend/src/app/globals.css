@@ -3,13 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --surface: #f6f9fb;
-  --surface-raised: #ffffff;
-  --surface-sunken: #eaf1f5;
-  --border: #d3e0e8;
-  --text-primary: #0b1f2a;
-  --text-secondary: #4a6878;
-  --text-muted: #7593a3;
+  /* Tema claro em tom quente (bege) em vez de branco/azul frio puro — o branco
+     antigo (#f6f9fb) lia como "clínico" e o texto secundário/muted não tinha
+     contraste suficiente pra leitura confortável. Ver PROGRESSO.md. */
+  --surface: #f5f1eb;
+  --surface-raised: #fdfbf8;
+  --surface-sunken: #f4f7f0;
+  --border: #ddd3c2;
+  --text-primary: #211d16;
+  --text-secondary: #3f5c6b;
+  --text-muted: #56707d;
 }
 
 .dark {
