@@ -38,13 +38,27 @@ export class BotSession {
   @Column('int', { default: 1 })
   tentativas: number;
 
-  // O que a pessoa foi escrevendo enquanto presa no menu — só os fragmentos
-  // com texto (mensagem de mídia nessa fase não é capturada, mesmo escopo
-  // de sempre). Guardado pra o atendente ver o histórico completo assim
-  // que a conversa nasce, em vez de só o número do setor escolhido no
-  // final ("2", sem contexto nenhum do que a pessoa queria).
+  // O que a pessoa foi escrevendo enquanto presa no menu — inclui mídia
+  // (imagem/documento/áudio/vídeo mandada antes de escolher o setor, ver
+  // BotSessionsService.registrarMidia): midia_path aponta pro mesmo
+  // diretório do MediaStorageService, salvo com um id provisório que não
+  // corresponde a nenhuma Message ainda — só passa a existir quando
+  // ConversationsService.inserirHistoricoBot converte cada item num
+  // registro de Message de verdade. Campos de mídia ausentes = mensagem de
+  // texto puro (formato antigo, ou entrada nova sem mídia). Guardado pra o
+  // atendente ver o histórico completo assim que a conversa nasce, em vez
+  // de só o número do setor escolhido no final ("2", sem contexto nenhum
+  // do que a pessoa queria).
   @Column('jsonb', { default: () => "'[]'" })
-  mensagens: Array<{ texto: string; criado_em: string }>;
+  mensagens: Array<{
+    texto: string;
+    criado_em: string;
+    origem?: 'cliente' | 'bot';
+    tipo?: string;
+    midia_path?: string;
+    midia_mimetype?: string;
+    midia_nome_arquivo?: string | null;
+  }>;
 
   @CreateDateColumn({ type: 'timestamptz' })
   criado_em: Date;

@@ -15,7 +15,7 @@ import {
   BotSessionsService,
 } from '../bot-sessions/bot-sessions.service';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
-import { Message, MessageOrigin } from '../messages/entities/message.entity';
+import { Message, MessageOrigin, MessageTipo } from '../messages/entities/message.entity';
 import { EventsGateway } from '../websocket/events.gateway';
 import { EvolutionService } from '../integrations/evolution/evolution.service';
 
@@ -42,6 +42,16 @@ function normalizarTelefoneDigitado(entrada: string): string {
   }
   return digitos;
 }
+
+// Mesmo texto de exibição padrão do MessagesService (LEGENDA_PADRAO_POR_TIPO)
+// pra mídia sem legenda — duplicado aqui (em vez de importar) porque é uma
+// constante de 4 linhas, não vale acoplar os dois módulos por isso.
+const LEGENDA_PADRAO_POR_TIPO: Partial<Record<MessageTipo, string>> = {
+  [MessageTipo.IMAGEM]: '[imagem]',
+  [MessageTipo.AUDIO]: '[áudio]',
+  [MessageTipo.DOCUMENTO]: '[documento]',
+  [MessageTipo.VIDEO]: '[vídeo]',
+};
 
 // Conversa + a última mensagem trocada, pra lista da fila mostrar prévia
 // sem precisar abrir o atendimento. Campo transiente: não existe na
@@ -346,6 +356,17 @@ export class ConversationsService {
     }
 
     for (const item of historico) {
+      // tipo/midia_path presentes só quando a pessoa mandou mídia antes de
+      // escolher o setor (ver BotSessionsService.registrarMidia) — o arquivo
+      // já está salvo em disco com esse path, só falta o registro de
+      // Message de verdade, que é o que esse loop cria. Mesmo fallback de
+      // legenda do MessagesService.create() pra mídia sem texto.
+      const tipo = item.tipo ?? MessageTipo.TEXTO;
+      const textoExibicao =
+        tipo === MessageTipo.TEXTO
+          ? item.texto
+          : item.texto?.trim() || LEGENDA_PADRAO_POR_TIPO[tipo] || item.texto;
+
       const mensagem = await this.messagesRepository.save(
         this.messagesRepository.create({
           conversation_id: conversationId,
@@ -353,7 +374,11 @@ export class ConversationsService {
           // divisor acima, já que não foi nem o cliente nem um atendente
           // quem escreveu. Ver BotSessionsService.registrarMensagemBot.
           origem: item.origem === 'bot' ? MessageOrigin.SISTEMA : MessageOrigin.CLIENTE,
-          mensagem: item.texto,
+          mensagem: textoExibicao,
+          tipo,
+          midia_path: item.midia_path ?? null,
+          midia_mimetype: item.midia_mimetype ?? null,
+          midia_nome_arquivo: item.midia_nome_arquivo ?? null,
         }),
       );
       // save() já grava com criado_em = agora (via @CreateDateColumn) —

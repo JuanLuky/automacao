@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { BotSession } from './entities/bot-session.entity';
 import { EventsGateway } from '../websocket/events.gateway';
+import { MediaStorageService } from '../messages/media-storage.service';
+import { MessageTipo } from '../messages/entities/message.entity';
 
 export interface BotSessionMensagem {
   texto: string;
@@ -11,6 +14,12 @@ export interface BotSessionMensagem {
   // enquanto ela não escolhia um setor válido. Opcional só pra registro
   // antigo em memória durante o deploy; toda escrita nova sempre inclui.
   origem?: 'cliente' | 'bot';
+  // Presentes só quando a pessoa mandou mídia antes de escolher o setor
+  // (ver registrarMidia) — ausentes = mensagem de texto puro.
+  tipo?: MessageTipo;
+  midia_path?: string;
+  midia_mimetype?: string;
+  midia_nome_arquivo?: string | null;
 }
 
 @Injectable()
@@ -19,6 +28,7 @@ export class BotSessionsService {
     @InjectRepository(BotSession)
     private readonly repo: Repository<BotSession>,
     private readonly eventsGateway: EventsGateway,
+    private readonly mediaStorage: MediaStorageService,
   ) {}
 
   // Chamado toda vez que chega mensagem de um telefone sem atendimento
@@ -41,10 +51,10 @@ export class BotSessionsService {
 
     const nomeLimpo = nome?.trim() || null;
 
-    // Mensagem de mídia nessa fase (áudio, imagem sem legenda) chega com
-    // texto vazio — não vira entrada no histórico (só o contador de
-    // tentativas sobe), mesmo escopo já aceito no restante do projeto pra
-    // mídia antes da escolha de setor.
+    // Mensagem de mídia chega aqui com texto vazio (o n8n manda a legenda,
+    // se houver, separadamente via registrarMidia, que já registra a
+    // tentativa junto — ver lá) — só sobe o contador, sem criar entrada
+    // duplicada no histórico.
     const textoLimpo = texto?.trim();
     if (!textoLimpo) {
       await this.repo.query(
@@ -61,6 +71,62 @@ export class BotSessionsService {
 
     const novaMensagem = JSON.stringify([
       { texto: textoLimpo, criado_em: new Date().toISOString(), origem: 'cliente' },
+    ]);
+    await this.repo.query(
+      `INSERT INTO bot_sessions (telefone, nome, mensagens) VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (telefone) DO UPDATE
+       SET tentativas = bot_sessions.tentativas + 1,
+           atualizado_em = now(),
+           nome = COALESCE($2, bot_sessions.nome),
+           mensagens = bot_sessions.mensagens || $3::jsonb`,
+      [telefone, nomeLimpo, novaMensagem],
+    );
+    this.eventsGateway.emitBotSessionAtualizada();
+  }
+
+  // Chamado pelo n8n quando a mensagem recebida sem conversa aberta é mídia
+  // (imagem, documento, áudio, vídeo) — contraparte de registrarTentativa
+  // pro caso que antes era descartado (ver comentário lá e o bug de
+  // histórico perdido em PROGRESSO.md). Salva o arquivo em disco já aqui
+  // (mesmo MediaStorageService das mensagens normais, com um id provisório
+  // — ConversationsService.inserirHistoricoBot é quem cria o registro de
+  // Message de verdade depois, reaproveitando esse midia_path) e soma a
+  // tentativa no mesmo INSERT/UPDATE de registrarTentativa, pra não contar
+  // a mesma mensagem duas vezes nem criar duas entradas separadas no
+  // histórico quando a mídia vem com legenda.
+  async registrarMidia(
+    telefone: string,
+    dados: {
+      texto?: string;
+      nome?: string;
+      tipo: MessageTipo;
+      midia_base64: string;
+      midia_mimetype: string;
+      midia_nome_arquivo?: string | null;
+    },
+  ): Promise<void> {
+    // Mesma exclusão de grupo de registrarTentativa (grupo não passa pelo
+    // menu de setores).
+    if (!telefone || telefone.includes('@g.us')) return;
+
+    const salvo = await this.mediaStorage.salvar(
+      randomUUID(),
+      dados.tipo,
+      dados.midia_base64,
+      dados.midia_mimetype,
+    );
+
+    const nomeLimpo = dados.nome?.trim() || null;
+    const novaMensagem = JSON.stringify([
+      {
+        texto: dados.texto?.trim() || '',
+        criado_em: new Date().toISOString(),
+        origem: 'cliente',
+        tipo: dados.tipo,
+        midia_path: salvo.path,
+        midia_mimetype: dados.midia_mimetype,
+        midia_nome_arquivo: dados.midia_nome_arquivo ?? null,
+      },
     ]);
     await this.repo.query(
       `INSERT INTO bot_sessions (telefone, nome, mensagens) VALUES ($1, $2, $3::jsonb)

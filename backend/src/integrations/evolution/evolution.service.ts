@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 // Adapter: o domínio chama enviarMensagem() sem saber os detalhes do payload
@@ -6,6 +6,8 @@ import { ConfigService } from '@nestjs/config';
 // só essa classe muda — nada no ConversationsService/MessagesService.
 @Injectable()
 export class EvolutionService {
+  private readonly logger = new Logger(EvolutionService.name);
+
   constructor(private readonly configService: ConfigService) {}
 
   // Devolve o id da mensagem no WhatsApp (key.id da resposta da Evolution
@@ -153,6 +155,14 @@ export class EvolutionService {
     }
 
     const corpo = await response.json().catch(() => null);
+    // A Evolution API pode responder 2xx mesmo quando o WhatsApp descarta a
+    // mídia do outro lado (ex: áudio em formato que o app rejeita) — a
+    // resposta completa fica logada aqui pra dar pra investigar depois um
+    // "enviado no painel mas não chegou" sem precisar reproduzir o problema
+    // de novo (ver PROGRESSO.md, bug de áudio).
+    this.logger.debug(
+      `Evolution API sendMedia (${opcoes.mediatype}, ${response.status}): ${JSON.stringify(corpo)}`,
+    );
     return { id: corpo?.key?.id ?? null };
   }
 

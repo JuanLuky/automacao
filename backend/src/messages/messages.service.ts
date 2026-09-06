@@ -209,14 +209,33 @@ export class MessagesService {
     // MediaStorageService.
     const id = randomUUID();
 
-    let midiaPath: string | null = null;
-    if (tipo !== MessageTipo.TEXTO && dto.midia_base64 && dto.midia_mimetype) {
-      const salvo = await this.mediaStorage.salvar(
-        id,
-        tipo,
-        dto.midia_base64,
-        dto.midia_mimetype,
+    // Áudio que o atendente manda pro cliente precisa chegar em ogg/opus —
+    // é o único formato que o WhatsApp reproduz como nota de voz (ver
+    // MediaStorageService.normalizarAudioParaWhatsapp). Só se aplica a esse
+    // caso: mensagem de cliente já veio pronta do WhatsApp via n8n, e
+    // origem_externa não passa por aqui (mandada fora do painel, só
+    // registrada). Roda antes de salvar em disco pra já guardar a versão
+    // convertida (é ela que o painel vai reproduzir depois).
+    let midiaBase64 = dto.midia_base64;
+    let midiaMimetype = dto.midia_mimetype;
+    if (
+      tipo === MessageTipo.AUDIO &&
+      dto.origem === MessageOrigin.ATENDENTE &&
+      !dto.origem_externa &&
+      midiaBase64 &&
+      midiaMimetype
+    ) {
+      const convertido = await this.mediaStorage.normalizarAudioParaWhatsapp(
+        midiaBase64,
+        midiaMimetype,
       );
+      midiaBase64 = convertido.base64;
+      midiaMimetype = convertido.mimetype;
+    }
+
+    let midiaPath: string | null = null;
+    if (tipo !== MessageTipo.TEXTO && midiaBase64 && midiaMimetype) {
+      const salvo = await this.mediaStorage.salvar(id, tipo, midiaBase64, midiaMimetype);
       midiaPath = salvo.path;
     }
 
@@ -235,7 +254,7 @@ export class MessagesService {
         mensagem: textoExibicao,
         tipo,
         midia_path: midiaPath,
-        midia_mimetype: midiaPath ? dto.midia_mimetype ?? null : null,
+        midia_mimetype: midiaPath ? midiaMimetype ?? null : null,
         midia_nome_arquivo: midiaPath ? dto.midia_nome_arquivo ?? null : null,
         atendente_id: remetente ? remetente.id : null,
         // origem_externa e cliente já vêm com o id da mensagem no WhatsApp
@@ -279,16 +298,16 @@ export class MessagesService {
         : textoExibicao;
 
       const enviada =
-        tipo !== MessageTipo.TEXTO && dto.midia_base64 && dto.midia_mimetype
+        tipo !== MessageTipo.TEXTO && midiaBase64 && midiaMimetype
           ? await this.evolutionService.enviarMidia(
               dto.instance,
               conversa.telefone,
               {
                 mediatype: MEDIATYPE_EVOLUTION_POR_TIPO[tipo] ?? "document",
-                mimetype: dto.midia_mimetype,
+                mimetype: midiaMimetype,
                 caption: textoWhatsapp,
                 fileName: dto.midia_nome_arquivo,
-                mediaBase64: dto.midia_base64,
+                mediaBase64: midiaBase64,
               },
             )
           : await this.evolutionService.enviarMensagem(

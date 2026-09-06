@@ -28,7 +28,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ \"http://host.docker.internal:3000/conversations/by-phone/\" + $json.telefone + \"?texto=\" + encodeURIComponent($json.texto || '') + \"&nome=\" + encodeURIComponent($json.nome || '') }}",
+        "url": "={{ \"http://host.docker.internal:3000/conversations/by-phone/\" + $json.telefone + \"?texto=\" + encodeURIComponent($json.tipo === 'texto' ? ($json.texto || '') : '') + \"&nome=\" + encodeURIComponent($json.nome || '') }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -161,6 +161,81 @@
       "typeVersion": 2,
       "position": [780, 780],
       "id": "node-if-fromme-sem-conversa"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-tipo-midia-sem-conversa",
+              "leftValue": "={{ $('Extrair Dados da Mensagem').item.json.tipo }}",
+              "rightValue": "texto",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "É Mídia Sem Conversa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [780, 980],
+      "id": "node-if-midia-sem-conversa"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://evolution-api:8080/chat/getBase64FromMediaMessage/\" + $('Extrair Dados da Mensagem').item.json.instance }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "COLOQUE_AQUI_A_EVOLUTION_API_KEY" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"message\": { \"key\": { \"id\": $('Extrair Dados da Mensagem').item.json.wa_message_id } } } }}",
+        "options": {}
+      },
+      "name": "Buscar Mídia (Bot)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1080, 980],
+      "id": "node-fetch-media-bot"
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Extrair Dados da Mensagem').item.json;\nconst resultado = $json; // resposta de \"Buscar Mídia (Bot)\": mediaType, fileName, size, mimetype, base64\n\n// Contraparte de \"Montar Mensagem de Mídia\" pro caso em que ainda não\n// existe Conversation (pessoa presa no menu) — vai pra\n// POST /bot-sessions/:telefone/midia-recebida em vez de\n// /conversations/:id/messages (ver BotSessionsService.registrarMidia).\nreturn [\n  {\n    json: {\n      telefone: original.telefone,\n      nome: original.nome,\n      texto: original.texto,\n      tipo: original.tipo,\n      midia_base64: resultado.base64,\n      midia_mimetype: resultado.mimetype,\n      midia_nome_arquivo: resultado.fileName || null,\n    },\n  },\n];\n"
+      },
+      "name": "Montar Mídia do Bot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 980],
+      "id": "node-build-media-bot"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://host.docker.internal:3000/bot-sessions/\" + $json.telefone + \"/midia-recebida\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-n8n-api-key", "value": "COLOQUE_AQUI_A_N8N_API_KEY" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"texto\": $json.texto, \"nome\": $json.nome, \"tipo\": $json.tipo, \"midia_base64\": $json.midia_base64, \"midia_mimetype\": $json.midia_mimetype, \"midia_nome_arquivo\": $json.midia_nome_arquivo } }}",
+        "options": {}
+      },
+      "name": "Registrar Mídia no Bot Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1520, 980],
+      "id": "node-register-media-bot"
     },
     {
       "parameters": {
@@ -826,7 +901,10 @@
     "Verificar Conversa Ativa": {
       "main": [
         [{ "node": "Definir Conversa Atual", "type": "main", "index": 0 }],
-        [{ "node": "É Mensagem Minha Sem Conversa Existente?", "type": "main", "index": 0 }]
+        [
+          { "node": "É Mensagem Minha Sem Conversa Existente?", "type": "main", "index": 0 },
+          { "node": "É Mídia Sem Conversa?", "type": "main", "index": 0 }
+        ]
       ]
     },
     "É Mensagem Minha Sem Conversa Existente?": {
@@ -834,6 +912,18 @@
         [],
         [{ "node": "É Mensagem de Grupo?", "type": "main", "index": 0 }]
       ]
+    },
+    "É Mídia Sem Conversa?": {
+      "main": [
+        [{ "node": "Buscar Mídia (Bot)", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Buscar Mídia (Bot)": {
+      "main": [[{ "node": "Montar Mídia do Bot", "type": "main", "index": 0 }]]
+    },
+    "Montar Mídia do Bot": {
+      "main": [[{ "node": "Registrar Mídia no Bot Session", "type": "main", "index": 0 }]]
     },
     "Definir Conversa Atual": {
       "main": [[{ "node": "É Mensagem de Mídia?", "type": "main", "index": 0 }]]

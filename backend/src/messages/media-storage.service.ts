@@ -1,5 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { spawn } from 'child_process';
+import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { MessageTipo } from './entities/message.entity';
 
@@ -61,6 +64,8 @@ const DIRETORIO_MIDIA = join(process.cwd(), 'uploads', 'mensagens');
 // (ver integrations/evolution/evolution.service.ts).
 @Injectable()
 export class MediaStorageService {
+  private readonly logger = new Logger(MediaStorageService.name);
+
   async salvar(
     id: string,
     tipo: MessageTipo,
@@ -95,5 +100,75 @@ export class MediaStorageService {
 
   async ler(path: string): Promise<Buffer> {
     return fs.readFile(join(DIRETORIO_MIDIA, path));
+  }
+
+  // WhatsApp só reproduz nota de voz (PTT) gravada em OGG/Opus — o
+  // MediaRecorder do navegador grava webm/opus no Chrome/Edge (só Firefox
+  // grava ogg nativo, ver ConversaPanel.tsx), e a Evolution API não converte
+  // isso sozinha: aceita o upload (responde 2xx) mesmo com o container
+  // errado, mas o WhatsApp descarta a mensagem sem avisar — a mensagem some
+  // sem erro nenhum aparecer no painel (bug real, ver PROGRESSO.md).
+  // Sempre reencodifica (mesmo se já vier como audio/ogg) pra garantir mono/
+  // 16kHz, em vez de confiar que o que o navegador/arquivo anexado produziu
+  // já bate com o que o WhatsApp espera.
+  async normalizarAudioParaWhatsapp(
+    base64: string,
+    mimetypeOriginal: string,
+  ): Promise<{ base64: string; mimetype: string }> {
+    const entrada = join(tmpdir(), `${randomUUID()}-entrada`);
+    const saida = join(tmpdir(), `${randomUUID()}-saida.ogg`);
+
+    await fs.writeFile(entrada, Buffer.from(base64, 'base64'));
+    try {
+      await this.executarFfmpeg(entrada, saida);
+      const convertido = await fs.readFile(saida);
+      return { base64: convertido.toString('base64'), mimetype: 'audio/ogg' };
+    } catch (erro) {
+      this.logger.error(
+        `Falha ao converter áudio (origem: ${mimetypeOriginal}) para ogg/opus: ${
+          erro instanceof Error ? erro.message : erro
+        }`,
+      );
+      throw new BadRequestException(
+        'Não foi possível converter o áudio para um formato aceito pelo WhatsApp.',
+      );
+    } finally {
+      await fs.rm(entrada, { force: true });
+      await fs.rm(saida, { force: true });
+    }
+  }
+
+  private executarFfmpeg(entrada: string, saida: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const processo = spawn('ffmpeg', [
+        '-y',
+        '-i',
+        entrada,
+        '-c:a',
+        'libopus',
+        '-ar',
+        '16000',
+        '-ac',
+        '1',
+        '-b:a',
+        '32k',
+        '-f',
+        'ogg',
+        saida,
+      ]);
+
+      let stderr = '';
+      processo.stderr.on('data', (dado) => {
+        stderr += dado.toString();
+      });
+      processo.on('error', reject);
+      processo.on('close', (codigo) => {
+        if (codigo === 0) {
+          resolve();
+        } else {
+          reject(new Error(`ffmpeg saiu com código ${codigo}: ${stderr.slice(-2000)}`));
+        }
+      });
+    });
   }
 }

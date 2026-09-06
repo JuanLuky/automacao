@@ -107,9 +107,14 @@ export function MediaMessage({ message }: MediaMessageProps) {
     <a
       href={url}
       download={message.midia_nome_arquivo ?? undefined}
-      className="flex items-center gap-2 rounded-lg border border-app bg-sunken px-3 py-2 text-[0.8125rem] hover:border-mist-500"
+      // Cor de texto explícita (em vez de herdar do balão pai): o balão do
+      // atendente usa text-abyss-900 fixo (contraste proposital contra o
+      // fundo tide-500, que não muda de tema), mas esse card usa bg-sunken,
+      // que É um token de tema — no escuro os dois ficam quase pretos e o
+      // nome do arquivo some (ver PROGRESSO.md).
+      className="flex items-center gap-2 rounded-lg border border-app bg-sunken px-3 py-2 text-[0.8125rem] text-primary hover:border-mist-500"
     >
-      <FileText size={18} className="shrink-0" />
+      <FileText size={18} className="shrink-0 text-primary" />
       <span className="truncate">
         {message.midia_nome_arquivo ?? "Documento"}
       </span>

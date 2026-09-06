@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { BotSessionsService } from './bot-sessions.service';
 import { RegistrarMensagemBotDto } from './dto/registrar-mensagem-bot.dto';
+import { RegistrarMidiaBotDto } from './dto/registrar-midia-bot.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { N8nOrJwtAuthGuard } from '../auth/guards/n8n-or-jwt-auth.guard';
 
@@ -36,5 +37,17 @@ export class BotSessionsController {
     @Body() dto: RegistrarMensagemBotDto,
   ) {
     return this.botSessionsService.registrarMensagemBot(telefone, dto.texto);
+  }
+
+  // Chamado pelo n8n quando a mensagem recebida sem conversa aberta é mídia
+  // (imagem/documento/áudio/vídeo) — mesmo padrão de autenticação das
+  // demais rotas chamadas pelo n8n (ver BotSessionsService.registrarMidia).
+  @UseGuards(N8nOrJwtAuthGuard)
+  @Post(':telefone/midia-recebida')
+  registrarMidiaRecebida(
+    @Param('telefone') telefone: string,
+    @Body() dto: RegistrarMidiaBotDto,
+  ) {
+    return this.botSessionsService.registrarMidia(telefone, dto);
   }
 }

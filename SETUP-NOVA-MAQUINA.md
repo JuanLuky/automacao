@@ -8,6 +8,7 @@ Roteiro pra colocar o Maré de pé do zero — clonou o repo, e agora? Siga na o
 
 - Docker + Docker Compose (v2, plugin `docker compose`, não `docker-compose` v1)
 - Node.js 20.x e npm (mesma versão usada nos `Dockerfile` de backend/frontend — `node:20-bookworm-slim`)
+- `ffmpeg` instalado no PATH se for rodar o backend nativo (`npm run start:dev`) — `MediaStorageService` chama o binário do sistema pra converter áudio gravado no navegador pra ogg/opus antes de mandar à Evolution API (`apt install ffmpeg` / `brew install ffmpeg`). Rodando via `docker-compose.app.yml`, já vem instalado na imagem.
 - Nenhum outro serviço já ocupando as portas: `5433` (Postgres), `6379` (Redis), `8089` (Evolution API), `5678` (n8n), `5050` (pgAdmin), `3000` (backend), `3001` (frontend)
 
 ## 1. Variáveis de ambiente
