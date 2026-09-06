@@ -166,6 +166,52 @@ export class EvolutionService {
     return { id: corpo?.key?.id ?? null };
   }
 
+  // Nota de voz de verdade (ptt) — não usar enviarMidia com mediatype
+  // "audio" pra isso. Lendo o código-fonte da própria Evolution API
+  // (whatsapp.baileys.service.js): sendMedia (mediaMessage()) nunca seta
+  // "ptt", então o WhatsApp do cliente não trata a mensagem como áudio
+  // tocável, mesmo com bytes/mimetype ogg/opus corretos — só
+  // /message/sendWhatsAppAudio (audioWhatsapp()) seta "ptt: true". Chamado
+  // só depois de MediaStorageService.normalizarAudioParaWhatsapp garantir
+  // ogg/opus de verdade — "encoding: false" pula a conversão própria da
+  // Evolution API (que, sem EVOLUTION_API "AUDIO_CONVERTER" configurado,
+  // reencodifica ignorando o que a gente manda) e usa o base64 recebido
+  // direto, com o mimetype/ptt fixos que o endpoint já hardcoda.
+  async enviarAudioVoz(
+    instance: string,
+    telefone: string,
+    mediaBase64: string,
+  ): Promise<{ id: string | null }> {
+    const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+    const response = await fetch(`${baseUrl}/message/sendWhatsAppAudio/${instance}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: apiKey ?? '',
+      },
+      body: JSON.stringify({
+        number: telefone,
+        audio: mediaBase64,
+        encoding: false,
+      }),
+    });
+
+    if (!response.ok) {
+      const corpo = await response.text();
+      throw new Error(
+        `Falha ao enviar áudio via Evolution API (${response.status}): ${corpo}`,
+      );
+    }
+
+    const corpo = await response.json().catch(() => null);
+    this.logger.debug(
+      `Evolution API sendWhatsAppAudio (${response.status}): ${JSON.stringify(corpo)}`,
+    );
+    return { id: corpo?.key?.id ?? null };
+  }
+
   // Confere se um número tem WhatsApp antes de abrir uma conversa a partir
   // do painel (ver ConversationsService.iniciar). Devolve também o número
   // canônico extraído do JID: no Brasil, celular habilitado antes da

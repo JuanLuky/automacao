@@ -49,6 +49,20 @@ function formatarNome(nome: string): string {
     .join(" ");
 }
 
+// A Evolution API deriva o mimetype da mensagem de áudio que chega no
+// WhatsApp pela EXTENSÃO do "fileName" que mandamos — não pelo campo
+// "mimetype" nem pelo conteúdo real do arquivo (confirmado comparando o
+// mimetype devolvido por ela pra um áudio gravado no navegador, nome
+// "gravacao-...webm", vs um áudio de arquivo, nome "....mp3": os dois já
+// tinham sido convertidos pra ogg/opus por normalizarAudioParaWhatsapp, mas
+// só o primeiro voltou marcado "video/webm" — o cliente não toca isso como
+// nota de voz). Por isso o nome do arquivo precisa refletir a extensão real
+// depois da conversão, não a original.
+function trocarExtensaoParaOgg(nomeArquivo: string | undefined): string | undefined {
+  if (!nomeArquivo) return nomeArquivo;
+  return `${nomeArquivo.replace(/\.[^./\\]+$/, "")}.ogg`;
+}
+
 function montarAssinatura(remetente: User | null): string | null {
   if (!remetente) return null;
   return `*${formatarNome(remetente.nome)}${
@@ -218,6 +232,7 @@ export class MessagesService {
     // convertida (é ela que o painel vai reproduzir depois).
     let midiaBase64 = dto.midia_base64;
     let midiaMimetype = dto.midia_mimetype;
+    let midiaNomeArquivo = dto.midia_nome_arquivo;
     if (
       tipo === MessageTipo.AUDIO &&
       dto.origem === MessageOrigin.ATENDENTE &&
@@ -231,6 +246,7 @@ export class MessagesService {
       );
       midiaBase64 = convertido.base64;
       midiaMimetype = convertido.mimetype;
+      midiaNomeArquivo = trocarExtensaoParaOgg(dto.midia_nome_arquivo);
     }
 
     let midiaPath: string | null = null;
@@ -255,7 +271,7 @@ export class MessagesService {
         tipo,
         midia_path: midiaPath,
         midia_mimetype: midiaPath ? midiaMimetype ?? null : null,
-        midia_nome_arquivo: midiaPath ? dto.midia_nome_arquivo ?? null : null,
+        midia_nome_arquivo: midiaPath ? midiaNomeArquivo ?? null : null,
         atendente_id: remetente ? remetente.id : null,
         // origem_externa e cliente já vêm com o id da mensagem no WhatsApp
         // (o n8n tira do próprio webhook, ver "Preparar Mensagem do
@@ -297,24 +313,42 @@ export class MessagesService {
         ? `${assinatura}\n\n${textoExibicao}`
         : textoExibicao;
 
+      // Nota de voz não aceita legenda no protocolo do WhatsApp (o app
+      // nativo nem mostra essa opção) — se o atendente digitou algo de
+      // verdade (não é só o placeholder "[áudio]"), manda como mensagem de
+      // texto separada, em vez de simplesmente descartar o que foi digitado.
+      if (tipo === MessageTipo.AUDIO && dto.mensagem.trim()) {
+        await this.evolutionService.enviarMensagem(
+          dto.instance,
+          conversa.telefone,
+          textoWhatsapp,
+        );
+      }
+
       const enviada =
-        tipo !== MessageTipo.TEXTO && midiaBase64 && midiaMimetype
-          ? await this.evolutionService.enviarMidia(
+        tipo === MessageTipo.AUDIO && midiaBase64
+          ? await this.evolutionService.enviarAudioVoz(
               dto.instance,
               conversa.telefone,
-              {
-                mediatype: MEDIATYPE_EVOLUTION_POR_TIPO[tipo] ?? "document",
-                mimetype: midiaMimetype,
-                caption: textoWhatsapp,
-                fileName: dto.midia_nome_arquivo,
-                mediaBase64: midiaBase64,
-              },
+              midiaBase64,
             )
-          : await this.evolutionService.enviarMensagem(
-              dto.instance,
-              conversa.telefone,
-              textoWhatsapp,
-            );
+          : tipo !== MessageTipo.TEXTO && midiaBase64 && midiaMimetype
+            ? await this.evolutionService.enviarMidia(
+                dto.instance,
+                conversa.telefone,
+                {
+                  mediatype: MEDIATYPE_EVOLUTION_POR_TIPO[tipo] ?? "document",
+                  mimetype: midiaMimetype,
+                  caption: textoWhatsapp,
+                  fileName: midiaNomeArquivo,
+                  mediaBase64: midiaBase64,
+                },
+              )
+            : await this.evolutionService.enviarMensagem(
+                dto.instance,
+                conversa.telefone,
+                textoWhatsapp,
+              );
 
       // Guarda o id que a Evolution API devolveu pra essa mensagem — é o
       // que permite reconhecer o eco dela (webhook "fromMe") mais tarde e
