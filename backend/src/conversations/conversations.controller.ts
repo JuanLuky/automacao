@@ -52,6 +52,23 @@ export class ConversationsController {
     });
   }
 
+  // Métricas do dashboard (por setor/atendente + série diária) — precisa
+  // vir ANTES de "@Get(':id')" abaixo, senão o Nest casa "metrics" como
+  // valor de :id (rota de um segmento só, mesma pegadinha que "by-phone" e
+  // "outbound" evitam por terem um segmento a mais no path).
+  @UseGuards(JwtAuthGuard)
+  @Get('metrics')
+  metricas(
+    @Query('departamento_id') departamento_id?: string,
+    @Query('data_inicio') data_inicio?: string,
+    @Query('data_fim') data_fim?: string,
+  ) {
+    if (!data_inicio || !data_fim) {
+      throw new BadRequestException('Campos "data_inicio" e "data_fim" são obrigatórios.');
+    }
+    return this.conversationsService.metricas({ departamento_id, data_inicio, data_fim });
+  }
+
   // Busca uma única conversa por id — usada pela tela de chat (cliente ou
   // grupo). Ver ConversationsService.buscarPorId.
   @UseGuards(JwtAuthGuard)

@@ -102,6 +102,16 @@ export interface ConversationsPaginado {
   por_pagina: number;
 }
 
+/** Retorno de GET /conversations/metrics — ver ConversationsService.metricas. */
+export interface ConversationMetrics {
+  total_finalizados: number;
+  por_departamento: { departamento_id: string; departamento_nome: string; finalizados: number }[];
+  /** Já vem ordenado desc por finalizados — é o ranking. */
+  por_atendente: { atendente_id: string; atendente_nome: string; finalizados: number }[];
+  /** Um item por dia do período, zero-preenchido. */
+  por_dia: { data: string; finalizados: number }[];
+}
+
 export interface CreateDepartmentPayload {
   nome: string;
   codigo: string;

@@ -8,6 +8,7 @@ import type {
   Contact,
   ConversationsPaginado,
   Conversation,
+  ConversationMetrics,
   ConversationStatus,
   ConversationTipo,
   CreateContactPayload,
@@ -207,6 +208,18 @@ export async function getConversationsPaginado(filtros: {
   sem_ativo?: boolean;
 }): Promise<ConversationsPaginado> {
   const { data } = await api.get<ConversationsPaginado>("/conversations", {
+    params: filtros,
+  });
+  return data;
+}
+
+/** Métricas do dashboard (por setor/atendente + série diária) — ver ConversationsService.metricas. */
+export async function getConversationMetrics(filtros: {
+  departamento_id?: string;
+  data_inicio: string;
+  data_fim: string;
+}): Promise<ConversationMetrics> {
+  const { data } = await api.get<ConversationMetrics>("/conversations/metrics", {
     params: filtros,
   });
   return data;

@@ -604,6 +604,99 @@ export class ConversationsService {
     return atualizada;
   }
 
+  // Métricas do dashboard (por setor/atendente + série diária) — usa o mesmo
+  // dado que já existe hoje (status=finalizado), sem tabela de histórico
+  // nova. Se a conversa foi transferida antes de fechar, quem finaliza leva
+  // o crédito (atendente_id no momento do finalizar, ver
+  // ConversationsService.transferir/finalizar).
+  async metricas(filtro: {
+    departamento_id?: string;
+    data_inicio: string;
+    data_fim: string;
+  }) {
+    const qb = this.conversationsRepository
+      .createQueryBuilder('conversation')
+      .leftJoinAndSelect('conversation.departamento', 'departamento')
+      .leftJoinAndSelect('conversation.atendente', 'atendente')
+      .where('conversation.tipo = :tipo', { tipo: ConversationTipo.CLIENTE })
+      .andWhere('conversation.status = :status', {
+        status: ConversationStatus.FINALIZADO,
+      })
+      .andWhere('conversation.finalizado_em BETWEEN :inicio AND :fim', {
+        inicio: inicioDoDiaLocal(filtro.data_inicio),
+        fim: fimDoDiaLocal(filtro.data_fim),
+      });
+
+    if (filtro.departamento_id) {
+      qb.andWhere('conversation.departamento_id = :departamento_id', {
+        departamento_id: filtro.departamento_id,
+      });
+    }
+
+    const conversas = await qb.getMany();
+
+    const porDepartamento = new Map<
+      string,
+      { departamento_id: string; departamento_nome: string; finalizados: number }
+    >();
+    const porAtendente = new Map<
+      string,
+      { atendente_id: string; atendente_nome: string; finalizados: number }
+    >();
+    const porDia = new Map<string, number>();
+
+    for (const conversa of conversas) {
+      if (conversa.departamento) {
+        const atual = porDepartamento.get(conversa.departamento_id!);
+        porDepartamento.set(conversa.departamento_id!, {
+          departamento_id: conversa.departamento_id!,
+          departamento_nome: conversa.departamento.nome,
+          finalizados: (atual?.finalizados ?? 0) + 1,
+        });
+      }
+
+      // atendente_id pode ser nulo num registro antigo/manual (ver comentário
+      // em reabrir) — entra no total mas fica de fora do ranking, não dá pra
+      // creditar ninguém.
+      if (conversa.atendente_id && conversa.atendente) {
+        const atual = porAtendente.get(conversa.atendente_id);
+        porAtendente.set(conversa.atendente_id, {
+          atendente_id: conversa.atendente_id,
+          atendente_nome: conversa.atendente.nome,
+          finalizados: (atual?.finalizados ?? 0) + 1,
+        });
+      }
+
+      const d = conversa.finalizado_em as Date;
+      const chaveDia = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+        d.getDate(),
+      ).padStart(2, '0')}`;
+      porDia.set(chaveDia, (porDia.get(chaveDia) ?? 0) + 1);
+    }
+
+    // Zero-preenche os dias sem nenhum finalizado, pro gráfico de tendência
+    // não pular datas — mesma construção local de data que o resto do
+    // método (evita o offset de fuso de "new Date('YYYY-MM-DD')").
+    const serieDiaria: { data: string; finalizados: number }[] = [];
+    const cursor = inicioDoDiaLocal(filtro.data_inicio);
+    const fim = inicioDoDiaLocal(filtro.data_fim);
+    while (cursor <= fim) {
+      const chaveDia = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(
+        2,
+        '0',
+      )}-${String(cursor.getDate()).padStart(2, '0')}`;
+      serieDiaria.push({ data: chaveDia, finalizados: porDia.get(chaveDia) ?? 0 });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return {
+      total_finalizados: conversas.length,
+      por_departamento: [...porDepartamento.values()],
+      por_atendente: [...porAtendente.values()].sort((a, b) => b.finalizados - a.finalizados),
+      por_dia: serieDiaria,
+    };
+  }
+
   async reabrir(id: string): Promise<Conversation> {
     const conversa = await this.buscarOuFalhar(id);
     this.recusarSeGrupo(conversa, 'reabrir');
