@@ -1,0 +1,233 @@
+# Produção (VPS) — stack inteira num arquivo só: infra + app + Caddy (HTTPS).
+#
+# Diferenças em relação ao dev (docker-compose.yml + docker-compose.app.yml):
+#   - Só o Caddy publica portas pra internet (80/443). Postgres, n8n e
+#     Evolution API ficam presos a 127.0.0.1 — acessíveis só por túnel SSH
+#     (ver DEPLOY-VPS.md). Redis, backend e frontend não publicam porta nenhuma.
+#     Importante: o Docker fura o ufw em portas publicadas sem 127.0.0.1, então
+#     não adianta "fechar no firewall" — tem que ser aqui.
+#   - Sem pgAdmin (usar DBeaver/pgAdmin local pelo túnel SSH na porta 5433).
+#   - Serviço "migrate" (profile "ferramentas") roda migration/seed de dentro
+#     de um container, sem precisar de Node instalado na VPS.
+#   - Logs com rotação (senão o disco da VPS enche com o tempo).
+#
+# Uso (a partir da raiz do repo, com .env criado a partir de .env.prod.example):
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml run --rm migrate
+#   docker compose -f docker-compose.prod.yml run --rm migrate npm run seed
+
+name: mare
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+networks:
+  atendimento-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  evolution_instances:
+  n8n_data:
+  caddy_data:
+  caddy_config:
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Só localhost da VPS — pra acessar de fora, túnel SSH.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_db.sh:/docker-entrypoint-initdb.d/init_db.sh
+    networks:
+      - atendimento-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      - redis_data:/data
+    networks:
+      - atendimento-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      # Manager (configurar webhook da instância) — só por túnel SSH.
+      - "127.0.0.1:8089:8080"
+    environment:
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      SERVER_URL: ${EVOLUTION_SERVER_URL}
+      CONFIG_SESSION_PHONE_CLIENT: ChatGPT
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/evolution_db
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_api
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_LABELS: "true"
+      DATABASE_SAVE_DATA_HISTORIC: "true"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/1
+      CACHE_REDIS_PREFIX_KEY: evolution_api
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+      # Webhook por instância (Manager → Events → Webhook →
+      # http://n8n:5678/webhook/whatsapp). NÃO habilitar o global junto.
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      LOG_LEVEL: "ERROR,WARN,INFO"
+      LOG_COLOR: "false"
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks:
+      - atendimento-network
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # Editor do n8n — só por túnel SSH (o webhook da Evolution é interno,
+      # não passa pela internet).
+      - "127.0.0.1:5678:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n_db
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_SERVER_URL: ${EVOLUTION_SERVER_URL}
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD}
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: America/Sao_Paulo
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - atendimento-network
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/atendimento_db
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      N8N_API_KEY: ${N8N_API_KEY}
+      CORS_ORIGIN: https://${DOMINIO_PAINEL}
+      PORT: 3000
+      TZ: America/Sao_Paulo
+    volumes:
+      - ./backend/uploads:/app/uploads
+    networks:
+      atendimento-network:
+        # O workflow do n8n chama http://host.docker.internal:3000 (no dev o
+        # backend roda no host). Esse alias faz o mesmo endereço cair direto
+        # no container do backend — o JSON do workflow funciona igual no dev
+        # e na VPS, sem editar nó nenhum depois de cada reimport.
+        aliases:
+          - host.docker.internal
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Embutidos no bundle em build-time — mudar domínio exige rebuild.
+        NEXT_PUBLIC_API_URL: https://${DOMINIO_API}
+        NEXT_PUBLIC_WS_URL: https://${DOMINIO_API}
+        NEXT_PUBLIC_EVOLUTION_INSTANCE: ${NEXT_PUBLIC_EVOLUTION_INSTANCE}
+    restart: unless-stopped
+    logging: *logging
+    networks:
+      - atendimento-network
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMINIO_PAINEL: ${DOMINIO_PAINEL}
+      DOMINIO_API: ${DOMINIO_API}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificados do Let's Encrypt — perder isso força reemissão (tem
+      # limite de emissões por semana), por isso volume nomeado.
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - atendimento-network
+
+  # Ferramenta, não sobe com "up": roda migration/seed e sai.
+  # Usa o estágio "builder" do Dockerfile do backend (tem ts-node e o src/).
+  migrate:
+    profiles: ["ferramentas"]
+    build:
+      context: ./backend
+      target: builder
+    command: ["npm", "run", "migration:run"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/atendimento_db
+    networks:
+      - atendimento-network

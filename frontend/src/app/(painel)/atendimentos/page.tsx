@@ -18,6 +18,7 @@ import {
   Search,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { AvisoWhatsappDesconectado } from "@/components/ui/AvisoWhatsappDesconectado";
 import { BotSessionModal } from "@/components/ui/BotSessionModal";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
@@ -546,7 +547,9 @@ export default function AtendimentosPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
+    <AvisoWhatsappDesconectado />
+    <div className="flex min-h-0 flex-1">
       {/* ---------------- coluna esquerda: lista ---------------- */}
       {/* Abaixo de lg não cabem as duas colunas: mostra a lista OU a
           conversa. A seta de voltar do ConversaPanel (onSair) limpa a
@@ -974,6 +977,7 @@ export default function AtendimentosPage() {
         onConfirm={handleConfirmarReabrir}
         onCancel={() => setReabrindoAlvo(null)}
       />
+    </div>
     </div>
   );
 }

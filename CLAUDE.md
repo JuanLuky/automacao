@@ -36,6 +36,7 @@ fluxo-completo-com-backend.json  # JSON exportado do workflow principal do n8n, 
 menu-departamentos.json          # JSON auxiliar (versão anterior/simplificada do menu)
 PROGRESSO.md                     # histórico de construção, sessão por sessão — ver topo deste arquivo
 SETUP-NOVA-MAQUINA.md            # roteiro operacional pra colocar o projeto de pé numa máquina nova (.env, npm, docker, Evolution, n8n)
+DEPLOY-VPS.md                    # roteiro de produção numa VPS (docker-compose.prod.yml + Caddyfile + .env.prod.example + scripts/backup.sh)
 ```
 
 ## Separação de responsabilidades (não mexer nisso sem motivo forte)

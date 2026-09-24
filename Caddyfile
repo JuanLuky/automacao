@@ -1,0 +1,21 @@
+# Proxy reverso da produção (docker-compose.prod.yml).
+# O Caddy emite e renova o certificado HTTPS (Let's Encrypt) sozinho — só
+# precisa que os dois domínios já apontem (registro DNS tipo A) pro IP da VPS
+# e que as portas 80/443 estejam abertas.
+
+{
+	email {$ACME_EMAIL}
+}
+
+# Painel do atendente (Next.js)
+{$DOMINIO_PAINEL} {
+	encode zstd gzip
+	reverse_proxy frontend:3001
+}
+
+# API + WebSocket (Socket.IO) do backend — o Caddy repassa o upgrade de
+# WebSocket automaticamente, sem configuração extra.
+{$DOMINIO_API} {
+	encode zstd gzip
+	reverse_proxy backend:3000
+}

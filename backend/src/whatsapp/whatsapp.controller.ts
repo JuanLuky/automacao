@@ -6,11 +6,13 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
 @Controller('whatsapp')
 export class WhatsappController {
   constructor(private readonly evolutionService: EvolutionService) {}
 
+  // Qualquer usuário logado — o inbox (/atendimentos) consulta pra mostrar o
+  // aviso de "WhatsApp desconectado" a todos os papéis, não só ao admin.
+  // Só devolve o estado da conexão, nada sensível.
   @Get('status')
   status(@Query('instance') instance: string) {
     if (!instance) {
@@ -19,6 +21,7 @@ export class WhatsappController {
     return this.evolutionService.getConnectionState(instance);
   }
 
+  @Roles(UserRole.ADMIN)
   @Get('qrcode')
   qrcode(@Query('instance') instance: string) {
     if (!instance) {

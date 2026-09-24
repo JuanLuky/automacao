@@ -825,3 +825,32 @@ Também achado no mesmo código: `processAudio()` (usado por `audioWhatsapp()` q
 - Rebuild do backend + `up -d backend` de novo.
 
 **Confirmado pelo usuário**: gravou e mandou de novo pelo painel — áudio chegou tocável no celular do cliente. Bug 2 fechado de verdade (as duas causas raiz anteriores — mimetype por extensão de arquivo, e falta de `ptt`— precisaram ser corrigidas juntas; nenhuma das duas sozinha resolvia).
+
+### Preparação pra hospedar em VPS — `docker-compose.prod.yml` + Caddy + backup (2026-09-24)
+
+Pedido do usuário: estava perdido sobre como hospedar o projeto; ainda não escolheu VPS nem domínio, mas pediu pra deixar tudo pronto até esse ponto. Modelo mantido: uma VPS por cliente, stack inteira em Docker Compose (sem espalhar serviços em Vercel/banco gerenciado — a Evolution API exige servidor sempre ligado de qualquer jeito).
+
+- **`docker-compose.prod.yml`** (standalone, não é override do dev — override de compose só *soma* `ports`, não daria pra fechar as portas do dev): infra + backend + frontend + **Caddy**. Só o Caddy publica porta pra internet (80/443). Postgres/n8n/Evolution presos em `127.0.0.1` (acesso por túnel SSH); Redis/backend/frontend sem porta nenhuma. Motivo de ser no compose e não no `ufw`: o Docker fura o `ufw` em porta publicada. Sem pgAdmin. Rotação de log (`json-file`, 10m×3). `name: mare` fixa os nomes de volume (`mare_evolution_instances`, usado pelo backup).
+- **Alias de rede `host.docker.internal` no backend**: o JSON do n8n chama `http://host.docker.internal:3000`; na VPS (Docker Engine puro) esse nome não existe — o alias faz ele cair direto no container do backend, então o mesmo `fluxo-completo-com-backend.json` funciona no dev e na produção sem editar nó.
+- **`CORS_ORIGIN` e `NEXT_PUBLIC_API_URL`/`WS_URL` derivados de `DOMINIO_PAINEL`/`DOMINIO_API`** no próprio compose — um lugar só pra trocar domínio.
+- **Serviço `migrate`** (profile `ferramentas`): usa o estágio `builder` do `backend/Dockerfile` (tem `ts-node` + `src/`), então migration/seed rodam sem Node na VPS: `docker compose -f docker-compose.prod.yml run --rm migrate [npm run seed]`.
+- **`Caddyfile`**: `painel.*` → `frontend:3001`, `api.*` → `backend:3000` (WebSocket repassado automaticamente), HTTPS via Let's Encrypt.
+- **`.env.prod.example`** (versionado — `.gitignore` só cobre `.env`): modelo do `.env` de produção.
+- **`scripts/backup.sh`**: `pg_dump -Fc` dos 3 bancos + `backend/uploads` + volume `evolution_instances` (evita escanear QR de novo ao restaurar), retenção local configurável, envio opcional via `rclone` (`BACKUP_REMOTO`). `backups/` adicionado ao `.gitignore`.
+- **`DEPLOY-VPS.md`**: roteiro completo (requisitos da VPS, DNS, hardening básico, subida, migrate/seed, túnel SSH, backup/restauração, atualização, checklist de entrega). Reaproveita as seções 5/6 do `SETUP-NOVA-MAQUINA.md` pra Evolution/n8n.
+
+**Validado depois, na mesma sessão (Docker ativado)**: `docker compose -f docker-compose.prod.yml config` OK (portas: só 80/443 públicas, 5433/5678/8089 em `127.0.0.1`; `CORS_ORIGIN`/`NEXT_PUBLIC_API_URL` derivados certo do domínio); `caddy validate` OK; estágio `builder` do backend rodando `migration:run` contra o Postgres local funcionou ("No migrations are pending"). **Ainda não testado**: subir o `docker-compose.prod.yml` de verdade (precisa de domínio + VPS pro HTTPS), backup/restauração.
+
+**Na mesma sessão, stack de dev reerguida**: o container `postgres` estava parado desde 2026-09-10 (`Exited (127)`), o que deixava a `evolution_api` em loop de restart (`P1001: Can't reach database server`). `docker compose up -d` resolveu; backend/frontend rebuildados, nenhuma migration pendente. **A instância `atendimento-empresa` voltou como `LOGOUT`/`state: close`** — provável desvinculação pelo WhatsApp depois de ~2 semanas sem o aparelho conectado; precisa escanear o QR de novo (painel → WhatsApp).
+
+**Pendências que continuam em aberto**: testes automatizados, monitoramento de erro (Sentry ou similar). O gateway de WebSocket ainda usa `cors: { origin: '*' }` (`events.gateway.ts`) — o CORS do HTTP já foi restrito, o do socket não; avaliar junto.
+
+### Aviso vermelho "WhatsApp desconectado" no inbox (2026-09-24)
+
+Pedido do usuário: quando o WhatsApp estiver desconectado, `/atendimentos` precisa mostrar um aviso vermelho. Motivo prático: com a instância caída, o atendente responde, a mensagem fica salva no painel e nunca chega ao cliente — sem nenhum sinal na tela (aconteceu nesta mesma sessão: instância em `LOGOUT` depois de ~2 semanas parada).
+
+- **Backend**: `GET /whatsapp/status` deixou de ser admin-only — `@Roles(ADMIN)` saiu da classe `WhatsappController` e foi pro método `qrcode` (QR continua só admin). Status só devolve o estado da conexão, nada sensível. Testado com JWT de atendente: status `200`, qrcode `403`, sem token `401`.
+- **Frontend**: `components/ui/AvisoWhatsappDesconectado.tsx` — consulta `getWhatsappStatus` a cada 30s; qualquer estado diferente de `open` (inclui `close` e `connecting`) mostra uma faixa vermelha sólida (`bg-red-600`, texto branco — o token `alert` #F87171 com texto na cor dele ficaria ilegível no tema claro) no topo do inbox. Se o backend não conseguir falar com a Evolution API, mostra "Não foi possível verificar a conexão" (mesmo efeito prático: mensagem não sai). Admin vê botão "Reconectar" → `/whatsapp`; os outros papéis, "Avise um administrador".
+- `atendimentos/page.tsx`: raiz virou coluna (`flex-col`) com o aviso em cima e o layout de duas colunas antigo embrulhado num `flex-1` — sem reindentar o arquivo inteiro, pra não poluir o diff.
+
+`tsc --noEmit` limpo em backend e frontend; containers rebuildados. **Não conferido visualmente no navegador** por mim — a instância estava `connecting` no momento, então o aviso deve estar aparecendo em `localhost:3001/atendimentos`.
