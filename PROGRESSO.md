@@ -629,15 +629,15 @@ Usuário confirmou, testando ao vivo pelo WhatsApp (não mais só navegador/curl
 - [x] Modal ao Assumir/Finalizar perguntando se manda mensagem automática (2026-08-17), testado e validado (2026-08-18)
 - [x] Rótulos de papéis editáveis `/perfis` (N1/N2/N3) (2026-08-17), testado e validado (2026-08-18)
 - [x] Header com dropdown "Administração" (2026-08-17), testado e validado (2026-08-18)
-- [x] Mensagens automáticas + respostas rápidas editáveis `/mensagens` (2026-08-18) — código completo, testado via curl. **Falta teste visual no navegador.**
-- [x] Etiquetas de clientes `/etiquetas` (2026-08-18) — código completo, testado via curl, bug do popover corrigido. **Falta teste visual no navegador.**
-- [x] Skeleton de carregamento pro nome/foto ao vivo (2026-08-18) — código completo. **Falta teste visual no navegador.**
-- [x] Reabrir conversa finalizada (2026-08-18) — código completo, testado via curl. **Falta teste visual do botão no chat isoladamente** (a versão na lista foi validada junto do inbox).
-- [x] Filtro por etiqueta na fila + contagem de uso no catálogo (2026-08-18) — código completo. **Falta teste com dado real.**
+- [x] Mensagens automáticas + respostas rápidas editáveis `/mensagens` (2026-08-18), validado visualmente no navegador (2026-09-10)
+- [x] Etiquetas de clientes `/etiquetas` (2026-08-18, + pill/picker na fila e no chat), validado visualmente no navegador (2026-09-10)
+- [x] Skeleton de carregamento pro nome/foto ao vivo (2026-08-18), validado visualmente no navegador (2026-09-10)
+- [x] Reabrir conversa finalizada (2026-08-18) — botão isolado no chat validado (2026-09-10; a versão na lista já tinha sido validada junto do inbox)
+- [x] Filtro por etiqueta na fila + contagem de uso no catálogo (2026-08-18), validado com dado real (2026-09-10)
 - [x] Inbox de duas colunas `/atendimentos` (2026-08-18), validado no navegador
 - [x] Aba Bot (2026-08-18), validado no navegador
-- [x] `POST /conversations/outbound` + modal "Iniciar conversa" (2026-08-18) — testado via curl. **Falta teste do modal no navegador com número real.**
-- [x] Painel acessível pela rede local (2026-08-18) — testado via curl a partir da própria máquina. **Falta teste a partir de uma máquina real da rede.**
+- [x] `POST /conversations/outbound` + modal "Iniciar conversa" (2026-08-18), validado no navegador com número real (2026-09-10)
+- [x] Painel acessível pela rede local (2026-08-18), validado a partir de uma máquina real da rede (2026-09-10)
 - [x] Histórico de mensagens de antes da escolha do setor injetado na conversa (2026-08-20), testado e validado com WhatsApp real (2026-08-27)
 - [x] Legibilidade das mensagens do bot no chat, tom `tide-500` (2026-08-24), testado e validado com WhatsApp real (2026-08-27)
 - [x] Preview ao passar o mouse também na aba Fila (2026-08-24), testado e validado com WhatsApp real (2026-08-27)
@@ -685,12 +685,10 @@ Motivado pela decisão de hospedar o Maré como SaaS (infra isolada por cliente 
 
 ## Próximos passos (pendências reais)
 
-- **Chave compartilhada n8n↔backend** nas rotas públicas — trade-off de MVP, decisão do usuário (2026-07-30): manter assim por enquanto, corrigir só perto de produção.
-- **Editar/apagar mensagem própria** (ver seção "Editar/apagar mensagem própria no WhatsApp real" acima): rodar `migration:run` e testar com WhatsApp real (editar texto, apagar para todos, e o caso de erro quando a janela de tempo do WhatsApp já expirou).
-- **Validação visual no navegador pendente** (código completo, só falta o teste com cliente real): `/mensagens`, `/etiquetas` (+ pill/picker na fila e no chat), skeleton de carregamento, botão "Reabrir conversa" isolado no chat, filtro por etiqueta com dado real, modal "Iniciar conversa"/`NovaConversaModal` com número real, acesso ao painel a partir de uma máquina real da rede local.
 - **Figurinha (sticker), localização, contato e enquete** do WhatsApp — fora de escopo, avaliar só se o uso real pedir.
-- **Nome do grupo automático** já foi resolvido (ver "Avatares" acima) — item antigo, não é mais pendência.
 - **Badge/toast de notificação pra mensagem de grupo** — `useNotifications` não reage a mensagem de grupo hoje (`conversa_atendente_id` é sempre `null` pra grupo). Não pedido ainda, avaliar se fizer falta.
+- **Dashboard com métricas** (2026-09-10, ver `git log` — `feat(dashboard): add performance metrics and visualizations`) — entrou direto por commit, sem passar por uma sessão que documentasse aqui; registrar o que foi feito e confirmar status de teste.
+- **Pendências de produção pra vender pra terceiros** (ver análise de 2026-09-04): chave n8n↔backend e CORS já resolvidos; ainda faltam testes automatizados (zero hoje), HTTPS/reverse proxy na frente dos containers, backup automático do Postgres, monitoramento de erro (Sentry ou similar).
 
 ### `SETUP-NOVA-MAQUINA.md` — roteiro pra máquina nova (2026-08-27)
 
