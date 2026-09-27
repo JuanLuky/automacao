@@ -8,14 +8,14 @@ Roteiro pra colocar o Maré de pé do zero — clonou o repo, e agora? Siga na o
 
 - Docker + Docker Compose (v2, plugin `docker compose`, não `docker-compose` v1)
 - Node.js 20.x e npm (mesma versão usada nos `Dockerfile` de backend/frontend — `node:20-bookworm-slim`)
-- `ffmpeg` instalado no PATH se for rodar o backend nativo (`npm run start:dev`) — `MediaStorageService` chama o binário do sistema pra converter áudio gravado no navegador pra ogg/opus antes de mandar à Evolution API (`apt install ffmpeg` / `brew install ffmpeg`). Rodando via `docker-compose.app.yml`, já vem instalado na imagem.
+- `ffmpeg` instalado no PATH se for rodar o backend nativo (`npm run start:dev`) — `MediaStorageService` chama o binário do sistema pra converter áudio gravado no navegador pra ogg/opus antes de mandar à Evolution API (`apt install ffmpeg` / `brew install ffmpeg`). Rodando o backend no container (`docker-compose.yml`), já vem instalado na imagem.
 - Nenhum outro serviço já ocupando as portas: `5433` (Postgres), `6379` (Redis), `8089` (Evolution API), `5678` (n8n), `5050` (pgAdmin), `3000` (backend), `3001` (frontend)
 
 ## 1. Variáveis de ambiente
 
 **Nenhum `.env` vem no git** (cada pasta tem seu próprio `.gitignore` cobrindo isso — não existe `.env.example` versionado hoje). Criar os três abaixo do zero.
 
-### `.env` (raiz — alimenta `docker-compose.yml` + `docker-compose.app.yml`)
+### `.env` (raiz — alimenta o `docker-compose.yml`)
 
 ```bash
 # Postgres
@@ -35,7 +35,7 @@ N8N_PASSWORD=
 PGADMIN_EMAIL=
 PGADMIN_PASSWORD=
 
-# Backend (usado pelo docker-compose.app.yml)
+# Backend (serviço backend do docker-compose.yml)
 JWT_SECRET=                   # gerar com: openssl rand -hex 32
 JWT_EXPIRES_IN=7d
 N8N_API_KEY=                  # gerar uma chave forte — precisa ser IDÊNTICA em backend/.env e no header "x-n8n-api-key" dos nós HTTP do n8n
@@ -84,29 +84,19 @@ Só necessário se for rodar nativo (`start:dev`/`dev`) em algum momento — os 
 
 ## 3. Subir a infraestrutura
 
-**Ordem importa.** `docker-compose.app.yml` referencia a rede `automacao_atendimento-network` como `external: true` — ela só existe depois que `docker-compose.yml` sobe sozinho pela primeira vez. Subir os dois arquivos juntos numa máquina nova falha com:
-
-```
-network automacao_atendimento-network declared as external, but could not be found
-```
-
-Passo a passo correto:
+Um arquivo só (`docker-compose.yml`) sobe tudo: Postgres, Redis, Evolution API, n8n, pgAdmin, backend e frontend, na mesma rede Docker.
 
 ```bash
-# 1. Infra base primeiro (cria a rede + Postgres, Redis, Evolution API, n8n, pgAdmin)
-docker compose -f docker-compose.yml up -d
-
-# 2. Backend + frontend containerizados, na mesma rede
-docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build backend frontend
+docker compose up -d --build
 ```
-
-Depois da primeira vez, pode subir tudo junto normalmente (`docker compose -f docker-compose.yml -f docker-compose.app.yml up -d`) — a rede já existe.
 
 Conferir que todos os 7 containers estão `Up`:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.app.yml ps
+docker compose ps
 ```
+
+Pra subir só a infra (ex: rodando backend/frontend nativos com `npm run start:dev`/`npm run dev`): `docker compose up -d postgres redis evolution-api n8n pgadmin`.
 
 ## 4. Migrations + seed (backend nativo, fora do container)
 

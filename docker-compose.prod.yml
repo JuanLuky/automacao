@@ -1,6 +1,6 @@
 # Produção (VPS) — stack inteira num arquivo só: infra + app + Caddy (HTTPS).
 #
-# Diferenças em relação ao dev (docker-compose.yml + docker-compose.app.yml):
+# Diferenças em relação ao dev (docker-compose.yml):
 #   - Só o Caddy publica portas pra internet (80/443). Postgres, n8n e
 #     Evolution API ficam presos a 127.0.0.1 — acessíveis só por túnel SSH
 #     (ver DEPLOY-VPS.md). Redis, backend e frontend não publicam porta nenhuma.

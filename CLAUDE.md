@@ -28,7 +28,7 @@ Sistema de atendimento via WhatsApp ("Maré") com **um único número** para tod
 ## Estrutura de pastas / repositórios
 
 ```
-atendimento-whatsapp-infra/   # docker-compose: Postgres, Redis, Evolution API, n8n, pgAdmin
+docker-compose.yml            # dev: Postgres, Redis, Evolution API, n8n, pgAdmin, backend, frontend (um arquivo só)
 backend/                      # NestJS — dono de toda a regra de negócio
 frontend/                     # Next.js — painel do atendente
 fluxo-completo-com-backend.json  # JSON exportado do workflow principal do n8n, na raiz do repo

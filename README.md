@@ -1,8 +1,8 @@
-# Infra — Fase 0: Postgres + Evolution API + n8n
+# Maré — ambiente de desenvolvimento (Docker)
 
-Este `docker-compose.yml` sobe toda a infraestrutura de apoio do projeto de atendimento WhatsApp: um Postgres compartilhado (com 3 bancos separados), Redis (exigido pela Evolution API), a própria Evolution API, o n8n e opcionalmente um pgAdmin para inspecionar os bancos.
+Este `docker-compose.yml` sobe o projeto inteiro de atendimento WhatsApp: um Postgres compartilhado (com 3 bancos separados), Redis (exigido pela Evolution API), a própria Evolution API, o n8n, um pgAdmin para inspecionar os bancos, e o backend (NestJS) e o frontend (Next.js).
 
-O backend NestJS **não está aqui** — ele roda fora do Docker (ou você adiciona depois), conectando no `atendimento_db` já criado por este compose.
+Passo a passo completo numa máquina nova: [`SETUP-NOVA-MAQUINA.md`](./SETUP-NOVA-MAQUINA.md). Produção: [`DEPLOY-VPS.md`](./DEPLOY-VPS.md).
 
 ## Como usar
 

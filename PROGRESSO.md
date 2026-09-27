@@ -854,3 +854,9 @@ Pedido do usuário: quando o WhatsApp estiver desconectado, `/atendimentos` prec
 - `atendimentos/page.tsx`: raiz virou coluna (`flex-col`) com o aviso em cima e o layout de duas colunas antigo embrulhado num `flex-1` — sem reindentar o arquivo inteiro, pra não poluir o diff.
 
 `tsc --noEmit` limpo em backend e frontend; containers rebuildados. **Não conferido visualmente no navegador** por mim — a instância estava `connecting` no momento, então o aviso deve estar aparecendo em `localhost:3001/atendimentos`.
+
+### `docker-compose.app.yml` incorporado ao `docker-compose.yml` (2026-09-27)
+
+Pedido do usuário: remover compose que não fosse usado. Os três estavam em uso, então a opção escolhida foi juntar os dois de dev num só. `backend` e `frontend` foram pro final do `docker-compose.yml`, na rede `atendimento-network` normal (não mais `external: true`). Com isso some a pegadinha de ordem numa máquina nova (a rede externa precisava existir antes). O `backend` ganhou `depends_on: postgres (service_healthy)`, que antes não dava pra declarar entre arquivos. O nome do projeto continua `automacao` (pasta), então a rede e os containers são os mesmos de antes.
+
+Dev agora é só `docker compose up -d --build`. Atualizados `SETUP-NOVA-MAQUINA.md` (seção 3 reescrita), `README.md`, comentário do `docker-compose.prod.yml` e a árvore de pastas do `CLAUDE.md` (que ainda citava a pasta `atendimento-whatsapp-infra/`, que não existe mais). **Não testado com `docker compose config`/`up`**: o Docker não estava disponível no WSL nesta sessão (integração do Docker Desktop desligada). Só a sintaxe do YAML foi conferida.
