@@ -54,6 +54,7 @@ export const EVOLUTION_INSTANCE = process.env.NEXT_PUBLIC_EVOLUTION_INSTANCE ?? 
 
 const TOKEN_KEY = "atendimento.token";
 const USER_KEY = "atendimento.user";
+const ATIVIDADE_KEY = "atendimento.ultimaAtividade";
 
 export const tokenStorage = {
   get: (): string | null => {
@@ -64,7 +65,31 @@ export const tokenStorage = {
   clear: () => {
     window.localStorage.removeItem(TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
+    window.localStorage.removeItem(ATIVIDADE_KEY);
   },
+  /** true se o token não existe, não dá pra ler ou já passou do `exp`. */
+  expirado: (token: string): boolean => {
+    try {
+      const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      const { exp } = JSON.parse(window.atob(payload)) as { exp?: number };
+      return !exp || exp * 1000 <= Date.now();
+    } catch {
+      return true;
+    }
+  },
+};
+
+/**
+ * Última interação do atendente com o painel (clique, tecla, rolagem) — em
+ * localStorage, não em memória, pra valer entre abas: trabalhar numa aba não
+ * desloga a outra por inatividade. Ver useAuth.
+ */
+export const atividadeStorage = {
+  get: (): number | null => {
+    const raw = window.localStorage.getItem(ATIVIDADE_KEY);
+    return raw ? Number(raw) : null;
+  },
+  marcar: () => window.localStorage.setItem(ATIVIDADE_KEY, String(Date.now())),
 };
 
 export const userStorage = {
@@ -91,6 +116,24 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// 401 fora do /auth/login = token vencido ou inválido (ex: ligou a máquina
+// no dia seguinte, depois do JWT_EXPIRES_IN). O AuthProvider registra aqui
+// o que fazer (deslogar e voltar pro login) — o axios não conhece o router.
+let aoSessaoExpirar: (() => void) | null = null;
+
+export function registrarAoSessaoExpirar(handler: (() => void) | null) {
+  aoSessaoExpirar = handler;
+}
+
+function ehLogin(error: AxiosError): boolean {
+  return Boolean(error.config?.url?.endsWith("/auth/login"));
+}
+
+api.interceptors.response.use(undefined, (error: AxiosError) => {
+  if (error.response?.status === 401 && !ehLogin(error)) aoSessaoExpirar?.();
+  return Promise.reject(error);
+});
+
 /**
  * Converte qualquer falha do axios em uma mensagem que faz sentido para
  * quem está olhando a tela — nunca expõe stack trace ou jargão de rede.
@@ -112,7 +155,19 @@ export function normalizeError(error: unknown): ApiError {
   const { status, data } = err.response;
 
   if (status === 401) {
-    return { message: "E-mail ou senha incorretos.", statusCode: 401 };
+    return {
+      message: ehLogin(err)
+        ? "E-mail ou senha incorretos."
+        : "Sua sessão expirou. Entre novamente.",
+      statusCode: 401,
+    };
+  }
+
+  if (status === 429) {
+    return {
+      message: "Muitas tentativas de login. Aguarde 5 minutos e tente de novo.",
+      statusCode: 429,
+    };
   }
 
   if (status === 403) {

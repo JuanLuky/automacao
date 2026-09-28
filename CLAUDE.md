@@ -158,7 +158,7 @@ frontend/src/
 
 - **Confiança client-side deliberada**: o backend não filtra `GET /conversations` por papel/setor — quem decide o que aparece é o frontend, passando `departamento_id` como query param. Mesmo padrão pras telas admin-only (reforço só no frontend, não replicado no backend).
 - **Papéis**: `atendente` só vê a fila/dashboard do próprio setor. `admin` vê tudo, com `Select` de setor. `supervisor` é como atendente, mas tem um toggle "Ver todos os setores" (`useVerTodosSetores`, `localStorage`) que dá o mesmo alcance do admin enquanto ligado. `podeVerTodos = isAdmin || (isSupervisor && verTodos)` controla o filtro em `fila`/`dashboard`/`atendimentos`.
-- **Auth**: token JWT em `localStorage` (chave `atendimento.token`), aplicado via interceptor do axios.
+- **Auth**: token JWT em `localStorage` (chave `atendimento.token`), aplicado via interceptor do axios. `AuthProvider` (`hooks/useAuth.tsx`) descarta sessão salva com token vencido (`exp` do JWT) ou sem interação há mais de 30 min (`atendimento.ultimaAtividade`, compartilhado entre abas) e desloga sozinho por inatividade; qualquer 401 fora do `/auth/login` desloga (interceptor de resposta → `registrarAoSessaoExpirar`). O `/login?motivo=inatividade|expirou` explica o motivo — 401 genérico **não** é "senha incorreta".
 - **Tema**: classe `.dark` no `<html>`, tokens de cor em `globals.css` (`--surface`, `--surface-raised`, `--text-primary` etc.), preferência em `localStorage`.
 - **Tempo real**: um único socket compartilhado (`lib/socket.ts`). `useSocketEvent(evento, handler)` assina/desassina no ciclo de vida do componente sem exigir handler memoizado. Em `fila`/`dashboard`, qualquer um dos três eventos (`nova_conversa`, `conversa_atualizada`, `conversa_finalizada`) simplesmente **recarrega a lista** — sem merge otimista de estado local, de propósito.
 - **`ConfirmModal`** (`components/ui/ConfirmModal.tsx`) substitui todo `window.confirm` — portal via `createPortal`, Escape/backdrop pra cancelar, `loading` (spinner), `variant="danger"`, e um terceiro botão opcional (`secondaryLabel`/`onSecondary`, ex: "Iniciar com/sem mensagem"). Qualquer confirmação nova deve reaproveitar esse componente.
@@ -176,6 +176,7 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 | `EVOLUTION_API_KEY` | infra + backend + n8n (nos nós HTTP) | precisa ser **idêntica** nos três lugares |
 | `JWT_SECRET` | backend | gerar com `openssl rand -hex 32`, não usar valor de exemplo |
 | `N8N_API_KEY` | infra + backend + n8n (header `x-n8n-api-key` nos nós HTTP) | mesma ideia de `EVOLUTION_API_KEY` — gerar com `openssl rand -hex 32`, idêntica nos três lugares. Ver `N8nOrJwtAuthGuard` |
+| `TRUST_PROXY` | backend (só prod) | `1` atrás do Caddy, pra `req.ip` ser o IP real (limite de tentativas do login, `LoginThrottlerGuard`: 5/min por IP+e-mail, bloqueio de 5 min). Não ligar sem proxy na frente — o cliente forjaria o IP pelo `X-Forwarded-For` |
 | `CORS_ORIGIN` | backend | origem(ns) do painel liberadas no CORS, separadas por vírgula; sem essa env cai no default de dev (`http://localhost:3001`) |
 | `NEXT_PUBLIC_API_URL` | frontend | endpoint do backend — em dev, `http://localhost:3000`; embutido no bundle em build-time |
 | `NEXT_PUBLIC_WS_URL` | frontend | endpoint do Socket.IO, normalmente igual à API |

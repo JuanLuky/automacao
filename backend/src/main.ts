@@ -7,6 +7,15 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // Atrás de um proxy reverso (Caddy na produção), req.ip seria sempre o IP
+  // do proxy — o limite de tentativas do login (LoginThrottlerGuard) juntaria
+  // todo mundo numa chave só. TRUST_PROXY=1 faz o Express ler o IP real do
+  // X-Forwarded-For. Não ligar sem proxy na frente: aí o cliente poderia
+  // forjar o próprio IP mandando esse header.
+  if (process.env.TRUST_PROXY) {
+    app.set('trust proxy', Number(process.env.TRUST_PROXY));
+  }
+
   // Origens permitidas do painel (frontend) — CORS_ORIGIN aceita uma ou
   // várias, separadas por vírgula. Sem essa env, cai no dev local padrão
   // (frontend em :3001) em vez de abrir pra qualquer origem.

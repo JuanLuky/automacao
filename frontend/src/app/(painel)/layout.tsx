@@ -293,7 +293,7 @@ export default function PainelLayout({
 
                   <button
                     type="button"
-                    onClick={signOut}
+                    onClick={() => signOut()}
                     aria-label="Sair"
                     className="rounded-lg border border-app p-2 text-secondary transition-colors hover:border-alert/50 hover:text-alert"
                   >

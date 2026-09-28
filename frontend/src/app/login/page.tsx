@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Lock, Mail, Moon, Sun, Waves } from "lucide-react";
+import { AlertCircle, Clock, Lock, Mail, Moon, Sun, Waves } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { LiveQueuePanel } from "@/components/LiveQueuePanel";
@@ -19,6 +19,19 @@ export default function LoginPage() {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  // Deslogado pelo painel (useAuth → signOut(motivo)): explica o porquê, pra
+  // não parecer que a senha deu errado. Lido direto da URL em vez de
+  // useSearchParams, que exigiria um <Suspense> em volta da página.
+  useEffect(() => {
+    const motivo = new URLSearchParams(window.location.search).get("motivo");
+    if (motivo === "inatividade") {
+      setAviso("Você saiu automaticamente depois de 30 minutos sem atividade. Entre novamente.");
+    } else if (motivo === "expirou") {
+      setAviso("Sua sessão expirou. Entre novamente.");
+    }
+  }, []);
 
   // Quem já está logado não precisa ver esta tela.
   useEffect(() => {
@@ -28,6 +41,7 @@ export default function LoginPage() {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setErro(null);
+    setAviso(null);
 
     if (!email.trim() || !senha) {
       setErro("Preencha e-mail e senha para entrar.");
@@ -111,6 +125,16 @@ export default function LoginPage() {
               onChange={(e) => setSenha(e.target.value)}
               disabled={enviando}
             />
+
+            {aviso && !erro && (
+              <div
+                role="status"
+                className="flex items-start gap-2.5 rounded-xl border border-tide-500/35 bg-tide-500/8 px-4 py-3"
+              >
+                <Clock size={17} className="mt-px shrink-0 text-tide-500" aria-hidden="true" />
+                <p className="text-[0.875rem] leading-snug text-primary">{aviso}</p>
+              </div>
+            )}
 
             {erro && (
               <div

@@ -168,6 +168,9 @@ services:
       N8N_API_KEY: ${N8N_API_KEY}
       CORS_ORIGIN: https://${DOMINIO_PAINEL}
       PORT: 3000
+      # Backend só é alcançado pelo Caddy (sem porta publicada) — confia em
+      # 1 salto de proxy pra ler o IP real do cliente (limite do login).
+      TRUST_PROXY: "1"
       TZ: America/Sao_Paulo
     volumes:
       - ./backend/uploads:/app/uploads
