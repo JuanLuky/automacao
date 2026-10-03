@@ -176,7 +176,8 @@ Marca "Maré" (ícone `Waves` do lucide-react). Paleta em `tailwind.config.ts`: 
 | `EVOLUTION_API_KEY` | infra + backend + n8n (nos nós HTTP) | precisa ser **idêntica** nos três lugares |
 | `JWT_SECRET` | backend | gerar com `openssl rand -hex 32`, não usar valor de exemplo |
 | `N8N_API_KEY` | infra + backend + n8n (header `x-n8n-api-key` nos nós HTTP) | mesma ideia de `EVOLUTION_API_KEY` — gerar com `openssl rand -hex 32`, idêntica nos três lugares. Ver `N8nOrJwtAuthGuard` |
-| `TRUST_PROXY` | backend (só prod) | `1` atrás do Caddy, pra `req.ip` ser o IP real (limite de tentativas do login, `LoginThrottlerGuard`: 5/min por IP+e-mail, bloqueio de 5 min). Não ligar sem proxy na frente — o cliente forjaria o IP pelo `X-Forwarded-For` |
+| `TRUST_PROXY` | backend | `1` atrás do Caddy (prod) ou do ngrok (dev), pra `req.ip` ser o IP real (limite de tentativas do login, `LoginThrottlerGuard`: 5/min por IP+e-mail, bloqueio de 5 min). Não ligar sem proxy na frente — o cliente forjaria o IP pelo `X-Forwarded-For` |
+| `NGROK_AUTHTOKEN` / `NGROK_DOMAIN` | infra (só dev) | serviço `ngrok` do `docker-compose.yml` expõe só o backend em HTTPS (domínio estático grátis) pro painel na Vercel/celular. Frontend manda `ngrok-skip-browser-warning` (axios + socket) senão o plano grátis devolve página de aviso. Prod usa Caddy, sem ngrok |
 | `CORS_ORIGIN` | backend | origem(ns) do painel liberadas no CORS, separadas por vírgula; sem essa env cai no default de dev (`http://localhost:3001`) |
 | `NEXT_PUBLIC_API_URL` | frontend | endpoint do backend — em dev, `http://localhost:3000`; embutido no bundle em build-time |
 | `NEXT_PUBLIC_WS_URL` | frontend | endpoint do Socket.IO, normalmente igual à API |
