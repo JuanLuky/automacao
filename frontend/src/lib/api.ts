@@ -104,7 +104,12 @@ export const userStorage = {
 
 export const api = axios.create({
   baseURL: API_URL,
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+    // Plano grátis do ngrok responde com uma página HTML de aviso em vez da
+    // API se esse header não vier. Inofensivo sem ngrok na frente.
+    "ngrok-skip-browser-warning": "true",
+  },
   timeout: 15000,
 });
 

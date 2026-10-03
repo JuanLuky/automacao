@@ -194,6 +194,9 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       N8N_API_KEY: ${N8N_API_KEY}
       CORS_ORIGIN: ${CORS_ORIGIN}
+      # 1 = confia num proxy na frente (ngrok/Caddy) pra req.ip ser o IP real
+      # do cliente (LoginThrottlerGuard). Vazio = sem proxy.
+      TRUST_PROXY: ${TRUST_PROXY:-}
       PORT: 3000
       # Sem isso o container roda em UTC (não herda o fuso do host) — quebra
       # BusinessHoursService.estaAberto(), que assume new Date() já em hora
@@ -209,6 +212,26 @@ services:
       # MediaStorageService grava em ./uploads/mensagens relativo ao cwd do
       # processo — bind mount preserva os arquivos entre rebuilds do container.
       - ./backend/uploads:/app/uploads
+    networks:
+      - atendimento-network
+
+  # ─────────────────────────────────────────────
+  # ngrok — expõe SÓ o backend em HTTPS (domínio estático grátis do ngrok),
+  # pro painel hospedado fora (Vercel) / celular fora de casa alcançar a API
+  # e o Socket.IO. n8n, Evolution, Postgres e pgAdmin continuam só locais.
+  # Painel de inspeção do túnel: http://localhost:4040
+  # ─────────────────────────────────────────────
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok
+    restart: unless-stopped
+    depends_on:
+      - backend
+    command: ["http", "--url=${NGROK_DOMAIN}", "backend:3000"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"
     networks:
       - atendimento-network
 
